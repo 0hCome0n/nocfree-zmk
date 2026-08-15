@@ -1,0 +1,59 @@
+/*
+ * PERIPHERAL keymap placeholder -- THIS FILE DOES ALMOST NOTHING.
+ *
+ * ZMK compiles keymap.c, combo.c, behavior_momentary_layer.c and the whole &kp
+ * behaviour family ONLY for non-split or central builds
+ * (zmk/app/CMakeLists.txt: `if ((NOT CONFIG_ZMK_SPLIT) OR
+ * CONFIG_ZMK_SPLIT_ROLE_CENTRAL)`). A split PERIPHERAL runs none of it. It scans
+ * its matrix, turns (row,col) into a position via its transform, and sends that
+ * position to the central. Nothing in this file is evaluated on the half.
+ *
+ * So do NOT put a recovery layer here and believe it works -- an earlier version
+ * of this file did exactly that, and holding those keys would have done nothing.
+ *
+ * HOW A HALF ACTUALLY GETS RESET:
+ *   behavior_reset.c IS compiled on peripherals, and it has locality
+ *   BEHAVIOR_LOCALITY_EVENT_SOURCE. So the CENTRAL invokes &bootloader with the
+ *   half as the event source, and the central relays it to that half. In
+ *   practice: use the DONGLE's keymap recovery layer and press a key belonging
+ *   to the half you want to reset. That requires the split link to be up.
+ *   If it is not, the 1200-baud USB touch in recovery.c is the only way in.
+ *
+ * ZMK still requires a keymap node to exist, and it must match the 96-position
+ * transform, hence this file.
+ */
+
+/* Keep the &bl (bcklight) behavior NODE even though this peripheral placeholder
+ * never references it. The node is /omit-if-no-ref/ in ZMK's backlight.dtsi, so
+ * without this define devicetree deletes it, behavior_backlight.c compiles to
+ * nothing, and the "bcklight" device never registers -- which makes the
+ * central's split_backlight_sync invoke silently fail (peripheral lookup returns
+ * NULL, no error because the keeper has no LOG). Proven root cause 2026-08-10
+ * (Fable): nocfree_right.uf2 contained the string "bcklight" zero times. */
+#define ZMK_BEHAVIORS_KEEP_BL
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+
+/ {
+	keymap {
+		compatible = "zmk,keymap";
+
+		base_layer: layer_0 {
+			display-name = "Base";
+			bindings = <
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+				&trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+			>;
+		};
+	};
+};

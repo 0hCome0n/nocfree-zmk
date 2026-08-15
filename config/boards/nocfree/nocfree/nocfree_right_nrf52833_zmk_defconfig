@@ -1,0 +1,107 @@
+# HWMv2: the SoC is selected by board.yml + Kconfig.<board>, NOT here.
+# Only application-level configuration belongs in this file.
+
+CONFIG_CLOCK_CONTROL_NRF=y
+# Crystal PROVEN on this PCB 2026-08-10 (clock probe trial, read off COM33:
+# LFCLKSTAT=0x00010001, "LFXO RUNNING"). XTAL permanently replaces the RC
+# hedge. If a future board rev drops the crystal, revert to
+# K32SRC_RC + K32SRC_500PPM (RC always works, mild power/timing cost).
+CONFIG_CLOCK_CONTROL_NRF_K32SRC_XTAL=y
+
+CONFIG_ARM_MPU=y
+CONFIG_GPIO=y
+CONFIG_PINCTRL=y
+
+CONFIG_I2C=y
+CONFIG_GPIO_PCA95XX=y
+# The expanders wired-OR their INT onto P0.05 on the RIGHT half (P0.31 on the
+# left). Interrupts intentionally NOT used: the three expanders share one INT
+# pin and Zephyr's pca95xx driver claims it per-instance. See nocfree.dtsi.
+# CONFIG_GPIO_PCA95XX_INTERRUPT is deliberately left off.
+
+CONFIG_USB_DEVICE_STACK=y
+CONFIG_USB_DEVICE_PRODUCT="NocFree ZMK Right"
+# USB identity: distinct from stock (0x8029) so you can always tell at a glance
+# which firmware a device is running. VID stays as the vendor's.
+CONFIG_USB_DEVICE_VID=0x2886
+CONFIG_USB_DEVICE_PID=0x9229
+CONFIG_USB_CDC_ACM=y
+CONFIG_SERIAL=y
+CONFIG_CONSOLE=y
+CONFIG_UART_CONSOLE=y
+CONFIG_UART_LINE_CTRL=y
+
+CONFIG_BT=y
+CONFIG_BT_PERIPHERAL=y
+
+# Battery reporting on Right half (verified P0.04 sense / P0.31 divider enable).
+CONFIG_ZMK_BATTERY_REPORTING=y
+# Same % curve as left so split fetch compares apples to apples.
+CONFIG_NOCFREE_BATTERY_STOCK_CURVE=y
+
+# Backlight: pwm2/P0.20, same circuit as the left half. The node lives
+# in nocfree_right_*.dts. On/off/brightness follow the left half over the
+# split transport (NOCFREE_BACKLIGHT_SYNC runs on the central); this half
+# only needs the local driver so invoked &bl commands have something to drive.
+CONFIG_PWM=y
+CONFIG_ZMK_BACKLIGHT=y
+CONFIG_ZMK_BACKLIGHT_ON_START=y
+CONFIG_ZMK_IDLE_TIMEOUT=300000
+CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE=y
+# Soft-off follows central; still enable so peripheral can enter off state.
+CONFIG_ZMK_PM_SOFT_OFF=y
+
+CONFIG_NVS=y
+CONFIG_SETTINGS_NVS=y
+CONFIG_FLASH=y
+CONFIG_FLASH_MAP=y
+CONFIG_FLASH_PAGE_LAYOUT=y
+
+CONFIG_BUILD_OUTPUT_UF2=y
+CONFIG_USE_DT_CODE_PARTITION=y
+
+# Recovery seatbelt: no reset pinhole on the halves, no keys on the dongle.
+CONFIG_NOCFREE_USB_RECOVERY=y
+CONFIG_REBOOT=y
+
+# --- Bootloader entry (ZMK main / Zephyr 4.1) ---------------------------------
+# Zephyr 3.6 removed the old GPREGRET reboot mechanism. &bootloader now works via
+# the retention/bootmode path, which needs these three symbols plus the
+# nrf52833_uf2_boot_mode.dtsi include. Without them &bootloader is a plain reset
+# and the all-keys recovery layer is decorative.
+CONFIG_RETAINED_MEM=y
+CONFIG_RETENTION=y
+CONFIG_RETENTION_BOOT_MODE=y
+
+# recovery.c uses printk, not the logging subsystem: CONFIG_LOG costs ~20 KB of
+# flash and the dongle build is already at 97% of its 276 KB partition. printk
+# keeps the diagnostics without the subsystem.
+
+# --- kscan must be told to poll ------------------------------------------------
+# zmk,kscan-gpio-direct uses INTERRUPTS by default and calls
+# gpio_pin_interrupt_configure_dt() on every pin. The PCA95xx driver only
+# implements that under CONFIG_GPIO_PCA95XX_INTERRUPT (which needs a per-chip
+# INT pin we cannot give it -- all three share P0.31). Without polling the call
+# returns -ENOSYS and kscan NEVER STARTS: the board boots with dead keys.
+CONFIG_ZMK_KSCAN_DIRECT_POLLING=y
+
+# Deep sleep: 30 min on battery (was 15); wake via expander INT (P0.05).
+# Battery switch is hard recovery if INT wake fails.
+CONFIG_ZMK_SLEEP=y
+CONFIG_ZMK_IDLE_SLEEP_TIMEOUT=1800000
+
+# Split latency is applied by the CENTRAL (left); set there. This line is inert
+# on the right (peripheral) but kept in sync for consistency / documentation.
+# 1 (was 4): see the left defconfig for the key-reordering rationale.
+CONFIG_ZMK_SPLIT_BLE_PREF_LATENCY=1
+
+# 96 keys on a split board can burst faster than the default 4-deep queue
+# drains; a dropped RELEASE event is a stuck key. Cheap insurance.
+CONFIG_ZMK_KSCAN_EVENT_QUEUE_SIZE=32
+
+# Same-peer bond overwrite (mirror of the left's proven pairfix flag). When
+# the left loses or clears its split bond, its fresh pairing must replace our
+# stale one instead of deadlocking the link (proven live 2026-08-11: left
+# logged "Security failed ... err 9" against the right + failed slot release,
+# right half dead until both sides were re-bonded).
+CONFIG_BT_SMP_ALLOW_UNAUTH_OVERWRITE=y

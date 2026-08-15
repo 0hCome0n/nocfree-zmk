@@ -1,0 +1,22 @@
+# Hardware Model v2. ZMK moved to Zephyr 4.1 in Dec 2025 and HWMv1 was removed
+# from Zephyr in 3.7, so the old boards/arm/<board>/ + Kconfig.board layout does
+# not build at all any more. SoC selection lives here now, not in the defconfigs.
+boards:
+  - name: nocfree_left
+    vendor: nocfree
+    socs:
+      - name: nrf52833
+        variants:
+          - name: zmk
+  - name: nocfree_right
+    vendor: nocfree
+    socs:
+      - name: nrf52833
+        variants:
+          - name: zmk
+  - name: nocfree_dongle
+    vendor: nocfree
+    socs:
+      - name: nrf52833
+        variants:
+          - name: zmk

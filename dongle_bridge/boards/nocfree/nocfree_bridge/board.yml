@@ -1,0 +1,6 @@
+board:
+  name: nocfree_bridge
+  full_name: "NocFree Dongle Bridge"
+  vendor: nocfree
+  socs:
+    - name: nrf52833

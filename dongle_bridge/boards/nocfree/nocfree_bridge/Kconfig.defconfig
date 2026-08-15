@@ -1,0 +1,10 @@
+if BOARD_NOCFREE_BRIDGE
+
+config BT_CTLR
+	default BT
+
+# SoftDevice region is empty on Adafruit layout; controller is Zephyr LL.
+config BT_CTLR_PHY_2M
+	default n
+
+endif # BOARD_NOCFREE_BRIDGE

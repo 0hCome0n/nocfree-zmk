@@ -1,0 +1,127 @@
+# HWMv2: the SoC is selected by board.yml + Kconfig.<board>, NOT here.
+# Only application-level configuration belongs in this file.
+
+CONFIG_CLOCK_CONTROL_NRF=y
+# Crystal PROVEN on both PCBs 2026-08-10 (clock probe: LFCLKSTAT=0x00010001,
+# "LFXO RUNNING", read off each half's CDC console). XTAL permanently replaces
+# the RC hedge: better BLE timing (the random split-link drop suspect) and
+# lower power. If a future board rev drops the crystal, revert to
+# K32SRC_RC + K32SRC_500PPM.
+CONFIG_CLOCK_CONTROL_NRF_K32SRC_XTAL=y
+
+CONFIG_ARM_MPU=y
+CONFIG_GPIO=y
+CONFIG_PINCTRL=y
+
+CONFIG_I2C=y
+CONFIG_GPIO_PCA95XX=y
+
+CONFIG_USB_DEVICE_STACK=y
+CONFIG_USB_DEVICE_PRODUCT="NocFree ZMK Left"
+CONFIG_USB_DEVICE_VID=0x2886
+CONFIG_USB_DEVICE_PID=0x9129
+CONFIG_USB_CDC_ACM=y
+CONFIG_ZMK_USB_BOOT=y
+CONFIG_SERIAL=y
+CONFIG_CONSOLE=y
+CONFIG_UART_CONSOLE=y
+CONFIG_UART_LINE_CTRL=y
+
+CONFIG_BT=y
+CONFIG_BT_PERIPHERAL=y
+
+# Windows 11 pair+type PROVEN 2026-08-10 on PAIRFIX trial (bleak connect was
+# timing out with 2M PHY on; ZMK docs recommend off for Intel/Realtek hosts).
+# Keepers must ship with 2M off until a later A/B proves otherwise.
+CONFIG_BT_CTLR_PHY_2M=n
+# Same trial also enabled same-peer unauth bond overwrite (with passkey forced
+# off). Retained so re-pair after profile churn matches the proven image.
+CONFIG_BT_SMP_ALLOW_UNAUTH_OVERWRITE=y
+# CONFIG_ZMK_BLE_PASSKEY_ENTRY is not set
+
+CONFIG_ZMK_BATTERY_REPORTING=y
+# Typical split UX: pull right half SoC over split and expose min() on host BAS.
+CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y
+CONFIG_NOCFREE_BATTERY_STOCK_CURVE=y
+CONFIG_NOCFREE_BATTERY_BAS_MIN=y
+
+# Backlight: pwm2/P0.20, proven on hardware (probe trial cycled the LEDs
+# correctly with NORMAL polarity).
+# The right half has the same circuit on the same pin and its own copy of
+# this block. Without these two, &bl keys are dead.
+# User decision 2026-08-09: backlight stays IN ("bring in everything else you
+# built"); disable via this defconfig only, never by editing the keymap tool.
+# If the LEDs ever light inverted, the fix is the pwm polarity flag in the
+# dts, not this switch.
+CONFIG_PWM=y
+CONFIG_ZMK_BACKLIGHT=y
+# Idle: after 5 min no keys, turn backlight off (still connected). Deep
+# sleep is separate (30 min on battery, d5f4157; ZMK skips deep sleep on USB).
+CONFIG_ZMK_IDLE_TIMEOUT=300000
+CONFIG_ZMK_BACKLIGHT_AUTO_OFF_IDLE=y
+# Soft-off: Fn hold key → SYSTEM OFF; wake via expander INT (see dts).
+CONFIG_ZMK_PM_SOFT_OFF=y
+# ZMK Studio: runtime keymap edits over USB (or BLE app). Build left with
+# -S studio-rpc-usb-uart (see tools/inner_build_left_keeper.sh). Unlock with
+# Fn+Home (&studio_unlock). After Studio saves, .keymap stock only returns
+# via Studio "Restore Stock Settings".
+CONFIG_ZMK_STUDIO=y
+# Mirror every on/off/brightness change to the right half over the split
+# transport (src/split_backlight_sync.c). Central-only; the right half just
+# runs the invoked &bl commands against its own pwmleds.
+CONFIG_NOCFREE_BACKLIGHT_SYNC=y
+
+CONFIG_NVS=y
+CONFIG_SETTINGS_NVS=y
+CONFIG_FLASH=y
+CONFIG_FLASH_MAP=y
+CONFIG_FLASH_PAGE_LAYOUT=y
+
+CONFIG_BUILD_OUTPUT_UF2=y
+CONFIG_USE_DT_CODE_PARTITION=y
+
+CONFIG_NOCFREE_USB_RECOVERY=y
+CONFIG_REBOOT=y
+
+CONFIG_RETAINED_MEM=y
+CONFIG_RETENTION=y
+CONFIG_RETENTION_BOOT_MODE=y
+
+CONFIG_ZMK_KSCAN_DIRECT_POLLING=y
+# Deep sleep: SYSTEM OFF after 30 min idle on battery (skipped while USB powered).
+# Wake: PCA9555 INT (P0.31). Soft-off (Fn hold) remains for intentional off.
+# If wireless dies after sleep, power-cycle / re-pair once; INT clear is armed
+# in expander_int_wake.c before poweroff. 30 min (was 15) so a work session
+# rarely hits the ~10-15 s SYSTEM-OFF reboot-wake, esp. on the 2.4G desk path.
+CONFIG_ZMK_SLEEP=y
+CONFIG_ZMK_IDLE_SLEEP_TIMEOUT=1800000
+
+# Link timing, tuned 2026-08-12 against right-half key REORDERING (worst in
+# 2.4G mode). Ordering is decided where the left merges split-link (right)
+# keys with its own; everything downstream is serialized. Two levers:
+#
+# SPLIT link (left central ↔ right peripheral, interval 7.5 ms = BLE floor):
+# latency 1 (was 4, ZMK default 30). Latency lets the idle right skip conn
+# events, but typing cadence (>30 ms between keys) re-armed the skip window
+# on almost EVERY key, so each right key could wait up to (lat+1)*7.5 ms —
+# 37.5 ms at 4 — while left keys landed instantly: the transposition. At 1
+# the worst case is 15 ms. Battery cost lands on the RIGHT half: ~+0.3%/day
+# of its 1150 mAh. Latency 0 rejected: ~3x that cost for ~7 ms more.
+#
+# HOST link (left is the peripheral; dongle/Windows the central): the dongle
+# bridge now PINS 15 ms/latency 2 and clamps requests (ble_hog_central.c) —
+# a strict 15 ms leaves the left's single radio a free slot between host
+# events for the 7.5 ms split link (the 2.4G-worse collision mechanism).
+# These prefs mirror the pin so BT mode (Windows) asks for the same shape.
+# Worst-case resume lag after idle: 3*15 = 45 ms, uniform, cannot reorder.
+CONFIG_BT_PERIPHERAL_PREF_MIN_INT=12
+CONFIG_BT_PERIPHERAL_PREF_MAX_INT=12
+CONFIG_BT_PERIPHERAL_PREF_LATENCY=2
+CONFIG_ZMK_SPLIT_BLE_PREF_LATENCY=1
+CONFIG_ZMK_KSCAN_EVENT_QUEUE_SIZE=32
+
+# Stock reboots on every mode-switch change (BT↔2.4G↔USB). Live re-select
+# alone leaves Windows host links up (RPA vs identity), so the dongle never
+# gets a free peripheral slot after leaving Bluetooth. Warm reboot matches
+# vendor behaviour and clears host state cleanly.
+CONFIG_NOCFREE_MODE_SWITCH_REBOOT=y

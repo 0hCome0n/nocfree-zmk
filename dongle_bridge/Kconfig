@@ -1,0 +1,60 @@
+# Application Kconfig for the dongle bridge.
+# Sourced as the Zephyr app Kconfig via CMake (standard Zephyr layout).
+
+mainmenu "NocFree Dongle Bridge"
+
+config NOCFREE_USB_RECOVERY
+	bool "1200-baud USB touch reboots into the UF2 bootloader"
+	default y
+	depends on USB_CDC_ACM
+	select REBOOT
+	select UART_LINE_CTRL
+	help
+	  ONLY software path into the bootloader on this device. Do not disable.
+
+config NOCFREE_USB_RECOVERY_BAUD
+	int "Baud rate that triggers recovery"
+	default 1200
+	depends on NOCFREE_USB_RECOVERY
+
+config NOCFREE_USB_RECOVERY_POLL_MS
+	int "CDC line-state poll period, ms"
+	default 15
+	depends on NOCFREE_USB_RECOVERY
+
+config NOCFREE_BRIDGE_KEEPER
+	bool "Permanent bridge image (no trial autodfu)"
+	default n
+	help
+	  Opt-in for non-trial builds. Must keep USB recovery. Never enable
+	  together with NOCFREE_TRIAL_AUTODFU.
+
+config NOCFREE_TRIAL_AUTODFU
+	bool "TRIAL ONLY: self-return to UF2 bootloader after a delay"
+	default n
+	depends on !NOCFREE_BRIDGE_KEEPER
+	select REBOOT
+	help
+	  Dead-man for first flashes. NEVER ship as a permanent image.
+
+config NOCFREE_TRIAL_AUTODFU_SECONDS
+	int "Seconds before trial returns to bootloader"
+	default 120
+	depends on NOCFREE_TRIAL_AUTODFU
+
+config NOCFREE_TRIAL_AUTODFU_WDT_SECONDS
+	int "PRE_KERNEL_1 watchdog backstop, seconds"
+	default 180
+	depends on NOCFREE_TRIAL_AUTODFU
+
+config NOCFREE_BRIDGE_BLE_ENABLE
+	bool "Start BLE central HOG client (scan/connect stubs → full later)"
+	default y
+	depends on BT_CENTRAL
+
+config NOCFREE_BRIDGE_USB_HID_ENABLE
+	bool "Start USB HID keyboard/consumer device"
+	default y
+	depends on USB_DEVICE_HID
+
+source "Kconfig.zephyr"

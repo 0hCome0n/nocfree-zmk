@@ -1,0 +1,215 @@
+diff --git a/app/boards/kinesis/adv360pro/README.md b/app/boards/kinesis/adv360pro/README.md
+old mode 100755
+new mode 100644
+diff --git a/app/include/zmk/activity.h b/app/include/zmk/activity.h
+index 2aad024..165c634 100644
+--- a/app/include/zmk/activity.h
++++ b/app/include/zmk/activity.h
+@@ -9,3 +9,8 @@
+ enum zmk_activity_state { ZMK_ACTIVITY_ACTIVE, ZMK_ACTIVITY_IDLE, ZMK_ACTIVITY_SLEEP };
+ 
+ enum zmk_activity_state zmk_activity_get_state(void);
++
++/* NocFree patch: external activity notification. Lets the split peripheral
++ * count "the central talked to us" as activity, so a half whose OWN keys are
++ * quiet (left-heavy sessions) does not idle-off / deep-sleep mid-session. */
++int zmk_activity_note(void);
+diff --git a/app/include/zmk/ble.h b/app/include/zmk/ble.h
+index 92b2107..431c593 100644
+--- a/app/include/zmk/ble.h
++++ b/app/include/zmk/ble.h
+@@ -42,6 +42,10 @@ char *zmk_ble_active_profile_name(void);
+ 
+ int zmk_ble_unpair_all(void);
+ 
++/* NocFree patch: force a stop + fresh start of peripheral advertising even if
++ * the cached advertising state claims it is already running. */
++int zmk_ble_force_readvertise(void);
++
+ int zmk_ble_set_device_name(char *name);
+ 
+ #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+diff --git a/app/module/drivers/sensor/battery/battery_voltage_divider.c b/app/module/drivers/sensor/battery/battery_voltage_divider.c
+index 62a02e9..11272ef 100644
+--- a/app/module/drivers/sensor/battery/battery_voltage_divider.c
++++ b/app/module/drivers/sensor/battery/battery_voltage_divider.c
+@@ -74,7 +74,19 @@ static int bvd_sample_fetch(const struct device *dev, enum sensor_channel chan)
+ 
+         uint16_t millivolts = val * (uint64_t)drv_cfg->full_ohm / drv_cfg->output_ohm;
+         LOG_DBG("ADC raw %d ~ %d mV => %d mV", drv_data->value.adc_raw, val, millivolts);
++#if IS_ENABLED(CONFIG_NOCFREE_BATTERY_STOCK_CURVE)
++        /* Pin mV (val) -> percent, matching the stock NocFree curve. */
++        int32_t pin_mv = val;
++        int32_t pct = ((pin_mv / 33) - 70) * 10 / 3;
++        if (pct < 0) {
++            pct = 0;
++        } else if (pct > 100) {
++            pct = 100;
++        }
++        uint8_t percent = (uint8_t)pct;
++#else
+         uint8_t percent = lithium_ion_mv_to_pct(millivolts);
++#endif
+         LOG_DBG("Percent: %d", percent);
+ 
+         drv_data->value.millivolts = millivolts;
+diff --git a/app/run-ble-test.sh b/app/run-ble-test.sh
+old mode 100755
+new mode 100644
+diff --git a/app/run-test.sh b/app/run-test.sh
+old mode 100755
+new mode 100644
+diff --git a/app/src/activity.c b/app/src/activity.c
+index f4dc356..b769cf5 100644
+--- a/app/src/activity.c
++++ b/app/src/activity.c
+@@ -71,6 +71,9 @@ static int note_activity(void) {
+ 
+ static int activity_event_listener(const zmk_event_t *eh) { return note_activity(); }
+ 
++/* NocFree patch: see include/zmk/activity.h. */
++int zmk_activity_note(void) { return note_activity(); }
++
+ void activity_work_handler(struct k_work *work) {
+     int32_t current = k_uptime_get();
+     int32_t inactive_time = current - activity_last_uptime;
+diff --git a/app/src/backlight.c b/app/src/backlight.c
+index 22b7306..d2bee26 100644
+--- a/app/src/backlight.c
++++ b/app/src/backlight.c
+@@ -56,7 +56,7 @@ static int zmk_backlight_update(void) {
+     return 0;
+ }
+ 
+-#if IS_ENABLED(CONFIG_SETTINGS)
++#if IS_ENABLED(CONFIG_SETTINGS) && !IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL)
+ static int backlight_settings_load_cb(const char *name, size_t len, settings_read_cb read_cb,
+                                       void *cb_arg) {
+     const char *next;
+@@ -91,7 +91,7 @@ static int zmk_backlight_init(void) {
+         return -ENODEV;
+     }
+ 
+-#if IS_ENABLED(CONFIG_SETTINGS)
++#if IS_ENABLED(CONFIG_SETTINGS) && !IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL)
+     k_work_init_delayable(&backlight_save_work, backlight_save_work_handler);
+ #endif
+ #if IS_ENABLED(CONFIG_ZMK_BACKLIGHT_AUTO_OFF_USB)
+@@ -106,7 +106,7 @@ static int zmk_backlight_update_and_save(void) {
+         return rc;
+     }
+ 
+-#if IS_ENABLED(CONFIG_SETTINGS)
++#if IS_ENABLED(CONFIG_SETTINGS) && !IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL)
+     int ret = k_work_reschedule(&backlight_save_work, K_MSEC(CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE));
+     return MIN(ret, 0);
+ #else
+diff --git a/app/src/battery.c b/app/src/battery.c
+index 811baf8..04006dc 100644
+--- a/app/src/battery.c
++++ b/app/src/battery.c
+@@ -104,6 +104,8 @@ static int zmk_battery_update(const struct device *battery) {
+     }
+ 
+ #if IS_ENABLED(CONFIG_BT_BAS)
++    /* NocFree: board code reports min(central, peripherals) to host BAS. */
++#if !IS_ENABLED(CONFIG_NOCFREE_BATTERY_BAS_MIN)
+     if (bt_bas_get_battery_level() != last_state_of_charge) {
+         LOG_DBG("Setting BAS GATT battery level to %d.", last_state_of_charge);
+ 
+@@ -114,6 +116,7 @@ static int zmk_battery_update(const struct device *battery) {
+             return rc;
+         }
+     }
++#endif /* !CONFIG_NOCFREE_BATTERY_BAS_MIN */
+ #endif
+ 
+     return rc;
+diff --git a/app/src/ble.c b/app/src/ble.c
+index 51b172b..3d6a68b 100644
+--- a/app/src/ble.c
++++ b/app/src/ble.c
+@@ -219,6 +219,17 @@ int update_advertising(void) {
+     return 0;
+ };
+ 
++int zmk_ble_force_readvertise(void) {
++    // NocFree patch: update_advertising() is only invoked from BT events and
++    // trusts advertising_status. One failed bt_le_adv_start (classic case:
++    // restart racing conn cleanup right after a disconnect) or a stale status
++    // leaves the advertiser silently off with nothing left to retry it. Reset
++    // reality and the cache, then re-run the normal state machine.
++    bt_le_adv_stop();
++    advertising_status = ZMK_ADV_NONE;
++    return update_advertising();
++}
++
+ static void update_advertising_callback(struct k_work *work) { update_advertising(); }
+ 
+ K_WORK_DEFINE(update_advertising_work, update_advertising_callback);
+diff --git a/app/src/endpoints.c b/app/src/endpoints.c
+index 17cdc5d..77de83d 100644
+--- a/app/src/endpoints.c
++++ b/app/src/endpoints.c
+@@ -443,11 +443,22 @@ static enum zmk_transport get_selected_transport(void) {
+             LOG_DBG("BLE is preferred and ready");
+             return ZMK_TRANSPORT_BLE;
+         }
++#if IS_ENABLED(CONFIG_BOARD_NOCFREE_LEFT)
++        /*
++         * NocFree physical mode switch: BT / 2.4G mean "wireless only".
++         * Stock does not leak HID to USB when a charge/Studio cable is
++         * plugged. ZMK's default fallback made the keyboard ignore the
++         * slider whenever USB was ready and BLE not yet connected.
++         */
++        LOG_DBG("BLE preferred but not ready — no USB fallback (NocFree)");
++        break;
++#else
+         if (is_usb_ready()) {
+             LOG_DBG("BLE is not ready. Falling back to USB");
+             return ZMK_TRANSPORT_USB;
+         }
+         break;
++#endif
+     }
+ 
+     LOG_DBG("Preferred endpoint transport is %d but no transports are ready", preferred_transport);
+diff --git a/app/src/split/peripheral.c b/app/src/split/peripheral.c
+index b814df6..c96fdab 100644
+--- a/app/src/split/peripheral.c
++++ b/app/src/split/peripheral.c
+@@ -5,7 +5,9 @@
+  */
+ 
+ #include <errno.h>
++#include <string.h>
+ 
++#include <zmk/activity.h>
+ #include <zmk/stdlib.h>
+ #include <zmk/split/transport/peripheral.h>
+ 
+@@ -36,6 +38,15 @@ int zmk_split_transport_peripheral_command_handler(
+ 
+     switch (cmd.type) {
+     case ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_INVOKE_BEHAVIOR: {
++        /* NocFree patch: any central invoke proves the session is alive —
++         * reset this half's idle/sleep clock. The central pushes a periodic
++         * sentinel ("nudge", no such behavior) purely for this side effect,
++         * so a half whose own keys are quiet (left-heavy use) no longer
++         * idles-off its backlight or deep-sleeps mid-session. */
++        (void)zmk_activity_note();
++        if (strcmp(cmd.data.invoke_behavior.behavior_dev, "nudge") == 0) {
++            return 0;
++        }
+         struct zmk_behavior_binding binding = {
+             .param1 = cmd.data.invoke_behavior.param1,
+             .param2 = cmd.data.invoke_behavior.param2,
+diff --git a/docs/docs/assets/troubleshooting/building/devicetree-step.png b/docs/docs/assets/troubleshooting/building/devicetree-step.png
+old mode 100755
+new mode 100644
+diff --git a/docs/docs/assets/troubleshooting/building/kconfig-step.png b/docs/docs/assets/troubleshooting/building/kconfig-step.png
+old mode 100755
+new mode 100644
+diff --git a/docs/netlify-ignore-command.sh b/docs/netlify-ignore-command.sh
+old mode 100755
+new mode 100644

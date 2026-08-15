@@ -1,0 +1,16 @@
+# Normalize line endings so scripts work on every platform.
+# Default: LF in the repo (ZMK/Zephyr and shell scripts expect LF).
+* text=auto eol=lf
+
+# Shell scripts MUST be LF, or they fail on macOS/Linux with
+# "bad interpreter: /usr/bin/env bash^M".
+*.sh  text eol=lf
+
+# PowerShell is Windows-native; CRLF is fine and expected there.
+*.ps1 text eol=crlf
+
+# Firmware and other binaries: never touch.
+*.uf2 binary
+*.hex binary
+*.bin binary
+*.elf binary

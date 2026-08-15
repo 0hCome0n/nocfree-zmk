@@ -1,0 +1,30 @@
+# Copyright (c) 2026 NocFree ZMK port
+# SPDX-License-Identifier: MIT
+
+description: |
+  Arm nRF GPIO SENSE for SYSTEM OFF wake. Keys are polled over I2C expanders,
+  so expander pins cannot wake the MCU. Stock ORs PCA9555 INT to one nRF pin;
+  optional extra pins (e.g. mode-switch) provide a no-battery-disconnect
+  recovery path if INT wake fails.
+
+  On PM suspend (deep-sleep entry) each pin that is currently inactive is
+  armed for LEVEL_ACTIVE sense. Already-active pins are skipped so a held
+  mode-switch position cannot block SYSTEM OFF. On resume, sense is cleared.
+
+compatible: "nocfree,expander-int-wake"
+
+include: base.yaml
+
+properties:
+  int-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      Primary expander INT net (active low, open-drain). Use GPIO_PULL_UP.
+  extra-gpios:
+    type: phandle-array
+    required: false
+    description: |
+      Additional wake sources (e.g. mode-switch pins). Armed only when
+      currently inactive so the selected switch position does not force
+      immediate re-wake. Flip the switch to wake if key INT fails.

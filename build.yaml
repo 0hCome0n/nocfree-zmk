@@ -1,0 +1,9 @@
+# ZMK GitHub Actions build matrix (reference; local Docker scripts are canonical).
+# Left keeper requires studio-rpc-usb-uart — see tools/inner_build_left_keeper.sh.
+# Dongle bridge is a separate app (dongle_bridge/), not board nocfree_dongle.
+---
+include:
+  - board: nocfree_left/nrf52833/zmk
+    snippet: studio-rpc-usb-uart
+    cmake-args: -DCONFIG_ZMK_STUDIO=y
+  - board: nocfree_right/nrf52833/zmk

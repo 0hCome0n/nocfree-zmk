@@ -1,0 +1,60 @@
+# Build trees & west
+build/
+build_export/
+.west/
+.west-workspace/
+zmk/
+zephyr/
+modules/
+optional/
+
+# Firmware blobs (build locally or use releases/)
+*.uf2
+*.elf
+*.hex
+*.bin
+*_dfu.zip
+
+# ...but DO ship the prebuilt keeper firmware for end users
+!firmware/*.uf2
+
+# Keep staged release artifacts if you force-add them
+!releases/.gitkeep
+
+# Logs & captures
+*.log
+*.err
+stickwatch.log
+STOP-STICKWATCH
+bt_purge_log.txt
+*_capture*
+round3_*
+selftest_capture*
+selftest_events.json
+
+# Trials & probes (never commit)
+*TRIAL*
+*PROBE*
+*ROUND*
+*PAIRFIX*
+*PRE_WINFIX*
+*SELFTEST*
+*BLFIX*
+quarantine_*/
+dongle_phase*
+
+# Python
+__pycache__/
+*.pyc
+tools/_layout_keys_snippet.txt
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Build tool drops these generic artifacts into releases/; keep only named keepers
+releases/.config
+releases/zmk.*
+releases/zephyr.*

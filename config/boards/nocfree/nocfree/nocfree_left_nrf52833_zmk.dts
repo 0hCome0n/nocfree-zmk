@@ -1,0 +1,117 @@
+/dts-v1/;
+#include <dt-bindings/pwm/pwm.h>
+#include "nocfree.dtsi"
+
+/ {
+	model = "NocFree & Left";
+	compatible = "nocfree,left";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,console = &cdc_acm_uart;
+		zmk,battery = &vbatt;
+		/* Points at the pwm-leds PARENT: zmk/app/src/backlight.c takes
+		 * DEVICE_DT_GET of the chosen and iterates its CHILDREN as the
+		 * LED channels. Pointing at the child itself yields
+		 * DT_NUM_CHILD=0 and a compile error. */
+		zmk,backlight = &pwmleds;
+	};
+
+	/*
+	 * Backlight: PWM on P0.20, brightness 0-255. Both halves have the
+	 * identical circuit on the same pin. Polarity NORMAL, proven on hardware.
+	 */
+	pwmleds: pwmleds {
+		compatible = "pwm-leds";
+		backlight_pwm: backlight {
+			pwms = <&pwm2 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
+			label = "Backlight";
+		};
+	};
+
+	/*
+	 * The physical three-position output-mode slide switch, left half only.
+	 *
+	 * The switch shorts one of two pins (P0.17, P0.15) to ground; both are
+	 * otherwise held high via internal pull-ups. Hence ACTIVE_LOW plus pull-up.
+	 *
+	 * Only three of the four encodings are reachable — P0.17 is decoded first
+	 * and P0.15 is not sampled when P0.17 is asserted:
+	 *
+	 *     P0.17 low            -> 2.4 GHz
+	 *     P0.17 high, P0.15 low -> bluetooth
+	 *     both high             -> wired
+	 *
+	 * VERIFIED on hardware 2026-08-08: switch up = 2.4GHz (P0.17 low),
+	 * middle = wired (both high), down = bluetooth (P0.15 low).
+	 */
+	mode_switch: mode_switch {
+		compatible = "nocfree,mode-switch";
+		status = "okay";
+		dongle-gpios = <&gpio0 17 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		bluetooth-gpios = <&gpio0 15 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+	};
+
+	/*
+	 * Soft-off: keymap &soft_off enters SYSTEM OFF. Wake on any key via
+	 * expander INT (same net as deep-sleep wake). Right power switch also
+	 * hard-resets if needed.
+	 */
+	keys {
+		compatible = "gpio-keys";
+		soft_off_wake_key: soft_off_wake_key {
+			gpios = <&gpio0 31 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Expander INT soft-off wake";
+		};
+	};
+
+	soft_off_waker: soft_off_waker {
+		compatible = "zmk,gpio-key-wakeup-trigger";
+		trigger = <&soft_off_wake_key>;
+		wakeup-source;
+	};
+
+	soft_off_wakers {
+		compatible = "zmk,soft-off-wakeup-sources";
+		status = "okay";
+		wakeup-sources = <&soft_off_waker>;
+	};
+
+};
+
+/*
+ * CDC ACM is here for the recovery shim, not for logging. It gives the host a
+ * serial port to perform the 1200-baud touch against -- the replacement for the
+ * reset pinhole these halves do not have. See RECOVERY.md.
+ */
+/* zephyr_udc0 label required by studio-rpc-usb-uart snippet (adds a second
+ * CDC ACM for Studio RPC; recovery still uses zephyr,console = cdc_acm_uart). */
+zephyr_udc0: &usbd {
+	status = "okay";
+	cdc_acm_uart: cdc_acm_uart {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};
+
+&pwm2 {
+	status = "okay";
+	pinctrl-0 = <&pwm2_default>;
+	pinctrl-1 = <&pwm2_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&pinctrl {
+	pwm2_default: pwm2_default {
+		group1 {
+			psels = <NRF_PSEL(PWM_OUT0, 0, 20)>;	/* P0.20 */
+		};
+	};
+
+	pwm2_sleep: pwm2_sleep {
+		group1 {
+			psels = <NRF_PSEL(PWM_OUT0, 0, 20)>;
+			low-power-enable;
+		};
+	};
+};

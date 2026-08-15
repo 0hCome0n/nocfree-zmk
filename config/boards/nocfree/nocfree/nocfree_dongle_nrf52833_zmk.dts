@@ -1,0 +1,157 @@
+/dts-v1/;
+#include <dt-bindings/zmk/matrix_transform.h>
+#include <nordic/nrf52833_qiaa.dtsi>
+/* Required for &bootloader to reach the UF2 bootloader on ZMK main:
+ * defines the gpregret1 retention area + magic mapper. Without it
+ * &bootloader is a plain reset. */
+#include <common/nordic/nrf52833_uf2_boot_mode.dtsi>
+
+/*
+ * The dongle has no keys and no expanders -- it is a radio bridge with USB.
+ * It therefore does NOT include nocfree.dtsi. It needs a kscan node anyway
+ * because ZMK's central expects one, so it gets the mock (zero-key) driver.
+ *
+ * This is the device with the highest recovery risk: no keys means &bootloader
+ * can never be bound, so the CDC 1200-baud shim is the ONLY way back in.
+ * Flash this one FIRST, while the halves are still stock. See RECOVERY.md.
+ */
+
+/ {
+	model = "NocFree & Dongle";
+	compatible = "nocfree,dongle";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &code_partition;
+		zephyr,console = &cdc_acm_uart;
+		zmk,kscan = &kscan0;
+		zmk,physical-layout = &default_layout;
+	};
+
+	/*
+	 * Keyless central. `events` is NOT optional: kscan_mock.c declares
+	 * uint32_t events[DT_INST_PROP_LEN(n, events)], which fails to compile if
+	 * the property is absent. The driver is auto-selected from the DT compat
+	 * (ZMK_KSCAN_MOCK_DRIVER) -- there is no CONFIG_ZMK_KSCAN_MOCK to set.
+	 */
+	kscan0: kscan_mock {
+		compatible = "zmk,kscan-mock";
+		columns = <0>;
+		rows = <0>;
+		/*
+		 * events = <0> would NOT mean "no events": kscan_mock decodes it as
+		 * ZMK_MOCK_RELEASE(row 0, col 0, 0 ms) and injects a phantom release
+		 * of position 0 at every boot. Use row 1, which is out of range for a
+		 * rows=1 transform, so the transform returns -EINVAL and it is dropped.
+		 */
+		events = <1>;
+	};
+
+	/*
+	 * The central's transform must cover positions from BOTH peripherals:
+	 * 48 (left) + 48 (right) = 96. The dongle's own kscan is empty, but split
+	 * position events still index into this transform, so the keymap has 96
+	 * bindings per layer.
+	 *
+	 * PLACEHOLDER ordering: 0-47 assumed left, 48-95 assumed right, each in raw
+	 * expander pin order. Both assumptions are unverified -- confirm during the
+	 * discovery pass and rewrite.
+	 */
+	default_layout: physical_layout_0 {
+		compatible = "zmk,physical-layout";
+		display-name = "Default";
+		transform = <&default_transform>;
+	};
+
+	default_transform: keymap_transform_0 {
+		compatible = "zmk,matrix-transform";
+		columns = <96>;
+		rows = <1>;
+		map = <
+			RC(0,0)  RC(0,1)  RC(0,2)  RC(0,3)  RC(0,4)  RC(0,5)  RC(0,6)  RC(0,7)
+			RC(0,8)  RC(0,9)  RC(0,10) RC(0,11) RC(0,12) RC(0,13) RC(0,14) RC(0,15)
+			RC(0,16) RC(0,17) RC(0,18) RC(0,19) RC(0,20) RC(0,21) RC(0,22) RC(0,23)
+			RC(0,24) RC(0,25) RC(0,26) RC(0,27) RC(0,28) RC(0,29) RC(0,30) RC(0,31)
+			RC(0,32) RC(0,33) RC(0,34) RC(0,35) RC(0,36) RC(0,37) RC(0,38) RC(0,39)
+			RC(0,40) RC(0,41) RC(0,42) RC(0,43) RC(0,44) RC(0,45) RC(0,46) RC(0,47)
+			RC(0,48) RC(0,49) RC(0,50) RC(0,51) RC(0,52) RC(0,53) RC(0,54) RC(0,55)
+			RC(0,56) RC(0,57) RC(0,58) RC(0,59) RC(0,60) RC(0,61) RC(0,62) RC(0,63)
+			RC(0,64) RC(0,65) RC(0,66) RC(0,67) RC(0,68) RC(0,69) RC(0,70) RC(0,71)
+			RC(0,72) RC(0,73) RC(0,74) RC(0,75) RC(0,76) RC(0,77) RC(0,78) RC(0,79)
+			RC(0,80) RC(0,81) RC(0,82) RC(0,83) RC(0,84) RC(0,85) RC(0,86) RC(0,87)
+			RC(0,88) RC(0,89) RC(0,90) RC(0,91) RC(0,92) RC(0,93) RC(0,94) RC(0,95)
+		>;
+	};
+};
+
+&gpio0 { status = "okay"; };
+/*
+ * GPIOTE must be enabled or gpio_nrfx.c fails a static assert:
+ * "Please enable GPIOTE instance for used GPIO port!". Zephyr's nRF GPIO driver
+ * pulls in nrfx_gpiote unconditionally, and every enabled GPIO port needs an
+ * instance behind it -- this is not optional even though our kscan polls the
+ * I2C expanders rather than using nRF interrupts.
+ */
+&gpiote {
+	status = "okay";
+};
+
+&gpio1 { status = "okay"; };
+
+&usbd {
+	status = "okay";
+	cdc_acm_uart: cdc_acm_uart {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};
+
+/* Same Adafruit bootloader layout as the halves -- app entry at 0x27000. */
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/*
+		 * nRF52833 has 512 KB (0x80000) of flash -- NOT 1 MB. An earlier
+		 * version of this file used nRF52840 offsets and ran to 0x100000,
+		 * i.e. double the real flash, with a code partition that would have
+		 * overlapped the bootloader. Anything that overwrites the bootloader
+		 * on a device with no reset button is an unrecoverable brick, so
+		 * these numbers matter more here than usual.
+		 *
+		 * App entry at 0x27000 is the one hard fact: every stock .uf2, for
+		 * both halves and the dongle, has its first block targeting 0x27000.
+		 * The top 48 KB is the Adafruit bootloader and its settings.
+		 *
+		 * 276 KB of code space, matching the ~280 KB expected for this part with
+		 * the SoftDevice region reserved.
+		 *
+		 * DO NOT use ZMK's `nrf52833-nosd` snippet here. It relocates the code
+		 * partition to 0x1000, which is only valid for bootloaders that jump
+		 * there. This one jumps to 0x27000, so the resulting image would not
+		 * boot. Reclaiming that 156 KB would mean replacing the vendor
+		 * bootloader, which we are explicitly not doing.
+		 */
+		sd_partition: partition@0 {
+			label = "softdevice";
+			reg = <0x00000000 0x00027000>;
+		};
+
+		code_partition: partition@27000 {
+			label = "code";
+			reg = <0x00027000 0x00045000>;
+		};
+
+		storage_partition: partition@6c000 {
+			label = "storage";
+			reg = <0x0006c000 0x00008000>;
+		};
+
+		boot_partition: partition@74000 {
+			label = "adafruit_boot";
+			reg = <0x00074000 0x0000c000>;
+		};
+	};
+};

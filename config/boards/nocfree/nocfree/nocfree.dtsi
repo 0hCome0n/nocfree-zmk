@@ -1,0 +1,480 @@
+﻿/*
+ * Shared hardware definition for the NocFree "&" split keyboard (nRF52833).
+ *
+ * Pin assignments below were determined empirically (flash-and-test) and hold
+ * for both halves EXCEPT where noted; the right half's differing pins are
+ * overridden in nocfree_right_*.dts. Re-verify against both halves before
+ * changing anything here.
+ *
+ *   MCU            nRF52833 (both halves and the dongle)
+ *   I2C            SDA P0.11, SCL P1.09, 400 kHz
+ *   Key inputs     3x PCA9555 16-bit I/O expanders at 0x20 / 0x22 / 0x24,
+ *                    all pins configured as inverted inputs
+ *                    => NOT a scanned matrix. 48 direct-wired keys, one per pin.
+ *   Expander INT   LEFT: P0.31   RIGHT: P0.05  (differ between halves)
+ *   Battery        ADC on P0.04 (AIN2), divider enable P0.05 (high only while sampling)
+ *   Status LED     P0.09
+ *
+ * KEY MAPPING: each expander port maps one 8-bit "row" per half, so the
+ * input-gpios order below is already row-major and needs no reordering. Which
+ * physical columns belong to which half was determined empirically.
+ */
+
+#include <dt-bindings/zmk/matrix_transform.h>
+#include <dt-bindings/regulator/nrf5x.h>
+#include <physical_layouts.dtsi>
+#include <nordic/nrf52833_qiaa.dtsi>
+/* Required for &bootloader to reach the UF2 bootloader on ZMK main:
+ * defines the gpregret1 retention area + magic mapper. Without it
+ * &bootloader is a plain reset. */
+#include <common/nordic/nrf52833_uf2_boot_mode.dtsi>
+
+/ {
+	chosen {
+		zephyr,code-partition = &code_partition;
+		zmk,kscan = &kscan0;
+		zmk,physical-layout = &default_layout;
+	};
+
+	/*
+	 * 48 direct-wired inputs. Keys pull to ground, so ACTIVE_LOW; we let ZMK
+	 * handle the inversion rather than using the expanders' polarity registers.
+	 */
+	kscan0: kscan_direct {
+		compatible = "zmk,kscan-gpio-direct";
+		wakeup-source;
+
+		/*
+		 * TIMING -- these are NOT the ZMK defaults, and the defaults are wrong
+		 * for this board.
+		 *
+		 * ZMK's defaults (debounce-scan-period-ms = 1, poll-period-ms = 10)
+		 * assume inputs that can be read in nanoseconds. Ours are 48 keys behind
+		 * THREE PCA9555 expanders on a single 400 kHz I2C bus. ZMK reads one
+		 * port per chip per scan (kscan_gpio_pin_get caches by port), so a scan
+		 * is 3 I2C transactions ~= 600-900 us.
+		 *
+		 * With the 1 ms default, a scan does not reliably fit inside its own
+		 * period while a key is held. `scan_time` then drifts into the past,
+		 * K_TIMEOUT_ABS_MS fires immediately, and the SYSTEM WORKQUEUE
+		 * saturates -- which starves USB and BLE, because they share it. The
+		 * observable symptoms are missed key releases (keys "stick") and
+		 * spurious USB re-enumeration.
+		 *
+		 * 5 ms leaves ~4 ms of headroom per scan and is still far faster than
+		 * any human keypress. 20 ms idle polling cuts bus traffic when nothing
+		 * is pressed.
+		 */
+		debounce-scan-period-ms = <5>;
+		poll-period-ms = <20>;
+
+		input-gpios =
+			<&expander0  0 GPIO_ACTIVE_LOW>,
+			<&expander0  1 GPIO_ACTIVE_LOW>,
+			<&expander0  2 GPIO_ACTIVE_LOW>,
+			<&expander0  3 GPIO_ACTIVE_LOW>,
+			<&expander0  4 GPIO_ACTIVE_LOW>,
+			<&expander0  5 GPIO_ACTIVE_LOW>,
+			<&expander0  6 GPIO_ACTIVE_LOW>,
+			<&expander0  7 GPIO_ACTIVE_LOW>,
+			<&expander0  8 GPIO_ACTIVE_LOW>,
+			<&expander0  9 GPIO_ACTIVE_LOW>,
+			<&expander0 10 GPIO_ACTIVE_LOW>,
+			<&expander0 11 GPIO_ACTIVE_LOW>,
+			<&expander0 12 GPIO_ACTIVE_LOW>,
+			<&expander0 13 GPIO_ACTIVE_LOW>,
+			<&expander0 14 GPIO_ACTIVE_LOW>,
+			<&expander0 15 GPIO_ACTIVE_LOW>,
+			<&expander1  0 GPIO_ACTIVE_LOW>,
+			<&expander1  1 GPIO_ACTIVE_LOW>,
+			<&expander1  2 GPIO_ACTIVE_LOW>,
+			<&expander1  3 GPIO_ACTIVE_LOW>,
+			<&expander1  4 GPIO_ACTIVE_LOW>,
+			<&expander1  5 GPIO_ACTIVE_LOW>,
+			<&expander1  6 GPIO_ACTIVE_LOW>,
+			<&expander1  7 GPIO_ACTIVE_LOW>,
+			<&expander1  8 GPIO_ACTIVE_LOW>,
+			<&expander1  9 GPIO_ACTIVE_LOW>,
+			<&expander1 10 GPIO_ACTIVE_LOW>,
+			<&expander1 11 GPIO_ACTIVE_LOW>,
+			<&expander1 12 GPIO_ACTIVE_LOW>,
+			<&expander1 13 GPIO_ACTIVE_LOW>,
+			<&expander1 14 GPIO_ACTIVE_LOW>,
+			<&expander1 15 GPIO_ACTIVE_LOW>,
+			<&expander2  0 GPIO_ACTIVE_LOW>,
+			<&expander2  1 GPIO_ACTIVE_LOW>,
+			<&expander2  2 GPIO_ACTIVE_LOW>,
+			<&expander2  3 GPIO_ACTIVE_LOW>,
+			<&expander2  4 GPIO_ACTIVE_LOW>,
+			<&expander2  5 GPIO_ACTIVE_LOW>,
+			<&expander2  6 GPIO_ACTIVE_LOW>,
+			<&expander2  7 GPIO_ACTIVE_LOW>,
+			<&expander2  8 GPIO_ACTIVE_LOW>,
+			<&expander2  9 GPIO_ACTIVE_LOW>,
+			<&expander2 10 GPIO_ACTIVE_LOW>,
+			<&expander2 11 GPIO_ACTIVE_LOW>,
+			<&expander2 12 GPIO_ACTIVE_LOW>,
+			<&expander2 13 GPIO_ACTIVE_LOW>,
+			<&expander2 14 GPIO_ACTIVE_LOW>,
+			<&expander2 15 GPIO_ACTIVE_LOW>;
+	};
+
+	/*
+	 * Physical layout for ZMK Studio (user geometry).
+	 * r0: PrtSc Home Del | r1: Bksp PgUp | r2: \\ PgDn | left: one space.
+	 * Regen: python tools/gen_studio_layout.py
+	 */
+	default_layout: physical_layout_0 {
+		compatible = "zmk,physical-layout";
+		display-name = "NocFree &";
+		transform = <&default_transform>;
+		/* Generated by tools/gen_studio_layout.py */
+		keys
+			= <&key_physical_attrs 100 100    0    0 0 0 0>
+			, <&key_physical_attrs 100 100  100    0 0 0 0>
+			, <&key_physical_attrs 100 100  200    0 0 0 0>
+			, <&key_physical_attrs 100 100  300    0 0 0 0>
+			, <&key_physical_attrs 100 100  400    0 0 0 0>
+			, <&key_physical_attrs 100 100  500    0 0 0 0>
+			, <&key_physical_attrs 100 100  600    0 0 0 0>
+			, <&key_physical_attrs  50  50 3200    0 0 0 0>
+			, <&key_physical_attrs 100 100    0  100 0 0 0>
+			, <&key_physical_attrs 100 100  100  100 0 0 0>
+			, <&key_physical_attrs 100 100  200  100 0 0 0>
+			, <&key_physical_attrs 100 100  300  100 0 0 0>
+			, <&key_physical_attrs 100 100  400  100 0 0 0>
+			, <&key_physical_attrs 100 100  500  100 0 0 0>
+			, <&key_physical_attrs 100 100  600  100 0 0 0>
+			, <&key_physical_attrs  50  50 3220    0 0 0 0>
+			, <&key_physical_attrs 150 100    0  200 0 0 0>
+			, <&key_physical_attrs 100 100  150  200 0 0 0>
+			, <&key_physical_attrs 100 100  250  200 0 0 0>
+			, <&key_physical_attrs 100 100  350  200 0 0 0>
+			, <&key_physical_attrs 100 100  450  200 0 0 0>
+			, <&key_physical_attrs 100 100  550  200 0 0 0>
+			, <&key_physical_attrs  50  50 3240    0 0 0 0>
+			, <&key_physical_attrs  50  50 3260    0 0 0 0>
+			, <&key_physical_attrs 175 100    0  300 0 0 0>
+			, <&key_physical_attrs 100 100  175  300 0 0 0>
+			, <&key_physical_attrs 100 100  275  300 0 0 0>
+			, <&key_physical_attrs 100 100  375  300 0 0 0>
+			, <&key_physical_attrs 100 100  475  300 0 0 0>
+			, <&key_physical_attrs 100 100  575  300 0 0 0>
+			, <&key_physical_attrs  50  50 3280    0 0 0 0>
+			, <&key_physical_attrs  50  50 3300    0 0 0 0>
+			, <&key_physical_attrs 225 100    0  400 0 0 0>
+			, <&key_physical_attrs 100 100  225  400 0 0 0>
+			, <&key_physical_attrs 100 100  325  400 0 0 0>
+			, <&key_physical_attrs 100 100  425  400 0 0 0>
+			, <&key_physical_attrs 100 100  525  400 0 0 0>
+			, <&key_physical_attrs 100 100  625  400 0 0 0>
+			, <&key_physical_attrs  50  50 3320    0 0 0 0>
+			, <&key_physical_attrs  50  50 3340    0 0 0 0>
+			, <&key_physical_attrs 100 100    0  500 0 0 0>
+			, <&key_physical_attrs 100 100  100  500 0 0 0>
+			, <&key_physical_attrs 100 100  200  500 0 0 0>
+			, <&key_physical_attrs 100 100  300  500 0 0 0>
+			, <&key_physical_attrs 250 100  400  500 0 0 0>
+			, <&key_physical_attrs  50  50 3360    0 0 0 0>
+			, <&key_physical_attrs  50  50 3380    0 0 0 0>
+			, <&key_physical_attrs  50  50 3400    0 0 0 0>
+			, <&key_physical_attrs 100 100  850    0 0 0 0>
+			, <&key_physical_attrs 100 100  950    0 0 0 0>
+			, <&key_physical_attrs 100 100 1050    0 0 0 0>
+			, <&key_physical_attrs 100 100 1150    0 0 0 0>
+			, <&key_physical_attrs 100 100 1250    0 0 0 0>
+			, <&key_physical_attrs 100 100 1350    0 0 0 0>
+			, <&key_physical_attrs 100 100 1450    0 0 0 0>
+			, <&key_physical_attrs 100 100 1550    0 0 0 0>
+			, <&key_physical_attrs 100 100  850  100 0 0 0>
+			, <&key_physical_attrs 100 100  950  100 0 0 0>
+			, <&key_physical_attrs 100 100 1050  100 0 0 0>
+			, <&key_physical_attrs 100 100 1150  100 0 0 0>
+			, <&key_physical_attrs 100 100 1250  100 0 0 0>
+			, <&key_physical_attrs 100 100 1350  100 0 0 0>
+			, <&key_physical_attrs 100 100 1450  100 0 0 0>
+			, <&key_physical_attrs 100 100 1550  100 0 0 0>
+			, <&key_physical_attrs 100 100  850  200 0 0 0>
+			, <&key_physical_attrs 100 100  950  200 0 0 0>
+			, <&key_physical_attrs 100 100 1050  200 0 0 0>
+			, <&key_physical_attrs 100 100 1150  200 0 0 0>
+			, <&key_physical_attrs 100 100 1250  200 0 0 0>
+			, <&key_physical_attrs 100 100 1350  200 0 0 0>
+			, <&key_physical_attrs 100 100 1450  200 0 0 0>
+			, <&key_physical_attrs 100 100 1550  200 0 0 0>
+			, <&key_physical_attrs 100 100  850  300 0 0 0>
+			, <&key_physical_attrs 100 100  950  300 0 0 0>
+			, <&key_physical_attrs 100 100 1050  300 0 0 0>
+			, <&key_physical_attrs 100 100 1150  300 0 0 0>
+			, <&key_physical_attrs 100 100 1250  300 0 0 0>
+			, <&key_physical_attrs 100 100 1350  300 0 0 0>
+			, <&key_physical_attrs 150 100 1400  300 0 0 0>
+			, <&key_physical_attrs 100 100 1650    0 0 0 0>
+			, <&key_physical_attrs 100 100  850  400 0 0 0>
+			, <&key_physical_attrs 100 100  950  400 0 0 0>
+			, <&key_physical_attrs 100 100 1050  400 0 0 0>
+			, <&key_physical_attrs 100 100 1150  400 0 0 0>
+			, <&key_physical_attrs 100 100 1250  400 0 0 0>
+			, <&key_physical_attrs 150 100 1350  400 0 0 0>
+			, <&key_physical_attrs 100 100 1450  400 0 0 0>
+			, <&key_physical_attrs 100 100 1550  200 0 0 0>
+			, <&key_physical_attrs 200 100  850  500 0 0 0>
+			, <&key_physical_attrs 100 100 1050  500 0 0 0>
+			, <&key_physical_attrs 100 100 1150  500 0 0 0>
+			, <&key_physical_attrs 100 100 1250  500 0 0 0>
+			, <&key_physical_attrs 100 100 1350  500 0 0 0>
+			, <&key_physical_attrs 100 100 1450  500 0 0 0>
+			, <&key_physical_attrs 100 100 1550  500 0 0 0>
+			, <&key_physical_attrs  50  50 3420    0 0 0 0>
+			;
+	};
+
+	default_transform: keymap_transform_0 {
+		compatible = "zmk,matrix-transform";
+		/*
+		 * 96 columns = the WHOLE keyboard, and BOTH halves use this map.
+		 *
+		 * zmk_matrix_transform_row_column_to_position() does:
+		 *     column += col_offset;
+		 *     index   = row * columns + column;
+		 *     return lookup_table[index] - 1;      // the MAP INDEX, not the RC value
+		 *
+		 * So the returned position is the position of the entry within `map`. A
+		 * 48-entry map can therefore only ever return 0-47 no matter what RC()
+		 * values it holds -- which is why an earlier attempt at giving the right
+		 * half its own 48-entry map with col-offset=48 did NOT separate the halves.
+		 *
+		 * The central adds no per-peripheral offset either (central.c computes
+		 * position = (i * 8) + j from the peripheral's bitmap), so separation has
+		 * to come from col-offset on the peripheral against a full-width map.
+		 *
+		 * Left keeps col-offset 0  -> its kscan cols 0-47 index entries 0-47.
+		 * Right sets col-offset 48 -> its kscan cols 0-47 index entries 48-95.
+		 */
+		columns = <96>;
+		rows = <1>;
+		map = <
+			RC(0,0) RC(0,1) RC(0,2) RC(0,3) RC(0,4) RC(0,5)
+			RC(0,6) RC(0,7) RC(0,8) RC(0,9) RC(0,10) RC(0,11)
+			RC(0,12) RC(0,13) RC(0,14) RC(0,15) RC(0,16) RC(0,17)
+			RC(0,18) RC(0,19) RC(0,20) RC(0,21) RC(0,22) RC(0,23)
+			RC(0,24) RC(0,25) RC(0,26) RC(0,27) RC(0,28) RC(0,29)
+			RC(0,30) RC(0,31) RC(0,32) RC(0,33) RC(0,34) RC(0,35)
+			RC(0,36) RC(0,37) RC(0,38) RC(0,39) RC(0,40) RC(0,41)
+			RC(0,42) RC(0,43) RC(0,44) RC(0,45) RC(0,46) RC(0,47)
+			RC(0,48) RC(0,49) RC(0,50) RC(0,51) RC(0,52) RC(0,53)
+			RC(0,54) RC(0,55) RC(0,56) RC(0,57) RC(0,58) RC(0,59)
+			RC(0,60) RC(0,61) RC(0,62) RC(0,63) RC(0,64) RC(0,65)
+			RC(0,66) RC(0,67) RC(0,68) RC(0,69) RC(0,70) RC(0,71)
+			RC(0,72) RC(0,73) RC(0,74) RC(0,75) RC(0,76) RC(0,77)
+			RC(0,78) RC(0,79) RC(0,80) RC(0,81) RC(0,82) RC(0,83)
+			RC(0,84) RC(0,85) RC(0,86) RC(0,87) RC(0,88) RC(0,89)
+			RC(0,90) RC(0,91) RC(0,92) RC(0,93) RC(0,94) RC(0,95)
+		>;
+	};
+	/*
+	 * Battery. The divider is only powered while sampling: drive the enable
+	 * pin high, wait ~1 ms, read, drop it again. `power-gpios` reproduces
+	 * that, so we do not burn current through the divider continuously.
+	 *
+	 *   Battery sense: P0.04 = AIN2
+	 *   Divider enable: P0.05  (LEFT half — differs on the right, see its dts)
+	 *
+	 * Stock voltage->percent curve:
+	 *     percent = clamp( ((mV * 1/33) - 70) * 10 / 3, 0, 100 )
+	 * so 0% at 2310 mV and 100% at 3300 mV measured at the ADC pin.
+	 *
+	 * INFERRED (verify before trusting): for a 3.0-4.2 V cell that implies a
+	 * divider ratio of ~0.77-0.79, and 270k (top) / 1M (output) gives 0.7874 --
+	 * the only clean E24 pair in range. Values below assume that.
+	 *
+	 * If battery percentage reads wrong, it is cosmetic; set
+	 * CONFIG_ZMK_BATTERY_REPORTING=n until the resistors are confirmed.
+	 */
+	vbatt: vbatt {
+		compatible = "zmk,battery-voltage-divider";
+		io-channels = <&adc 2>;           /* AIN2 = P0.04 */
+		output-ohms = <1000000>;          /* INFERRED from the 2310-3300 mV span */
+		full-ohms = <(1000000 + 270000)>; /* INFERRED, ratio 0.7874 */
+		power-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;  /* P0.05 */
+	};
+
+	/* Status LED is P0.09 (not P0.04). */
+	leds {
+		compatible = "gpio-leds";
+		status_led: led_0 {
+			gpios = <&gpio0 9 GPIO_ACTIVE_HIGH>;
+			label = "Status LED";
+		};
+	};
+
+	/*
+	 * Deep-sleep wake. All three PCA9555 INT lines are wired-OR to one
+	 * nRF pin (LEFT default P0.31; RIGHT overrides to P0.05). kscan cannot
+	 * wake from SYSTEM OFF by itself because keys are polled over I2C.
+	 *
+	 * IMPORTANT: do NOT put mode-switch pins (P0.15/P0.17) here. Touching
+	 * those GPIOs races mode_switch.c (CHANGE IRQs + 2.4G/BT/USB select)
+	 * and can break dongle mode after a sleep-keeper flash. Left recovery
+	 * from failed INT wake = flip mode switch only works as a *physical*
+	 * edge if we arm it carefully later; for now key INT only.
+	 * Right recovery = battery power switch.
+	 * See src/expander_int_wake.c.
+	 */
+	expander_int_wake0: expander_int_wake {
+		compatible = "nocfree,expander-int-wake";
+		status = "okay";
+		int-gpios = <&gpio0 31 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+	};
+};
+
+&i2c0 {
+	status = "okay";
+	compatible = "nordic,nrf-twim";
+	clock-frequency = <I2C_BITRATE_FAST>;   /* 400 kHz -- LEFT only. The right
+	                                         * half runs its I2C at 100 kHz; the
+	                                         * right dts overrides this to STANDARD. */
+	pinctrl-0 = <&i2c0_default>;
+	pinctrl-1 = <&i2c0_sleep>;
+	pinctrl-names = "default", "sleep";
+
+	/*
+	 * NO interrupt-gpios -- deliberately. All three expanders wired-OR their
+	 * open-drain INT onto P0.31, but Zephyr's pca95xx driver claims the pin per
+	 * instance: the last one to initialise overwrites the others' callbacks, and
+	 * its handler only reads its own chip. A different chip's interrupt would then
+	 * never be serviced, INT would stay asserted, no further edges would arrive,
+	 * and interrupts would stop working ENTIRELY -- worse than not using them.
+	 *
+	 * So kscan polls the expanders over I2C instead. That is still sound: ZMK
+	 * samples and emits discrete position-change events, and unlike the stock
+	 * firmware it does not collapse a press+release into "no change" (that bug
+	 * was in the vendor's ingest, not in polling per se).
+	 *
+	 * TODO: to get true event-driven scanning, declare the INT on ONE node and
+	 * have its handler read all three chips -- needs a wrapper around the driver.
+	 */
+	expander0: pca9555@20 {
+		compatible = "nxp,pca95xx";
+		reg = <0x20>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <16>;
+	};
+
+	expander1: pca9555@22 {
+		compatible = "nxp,pca95xx";
+		reg = <0x22>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <16>;
+	};
+
+	expander2: pca9555@24 {
+		compatible = "nxp,pca95xx";
+		reg = <0x24>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <16>;
+	};
+};
+
+&pinctrl {
+	i2c0_default: i2c0_default {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 11)>,   /* P0.11 */
+				<NRF_PSEL(TWIM_SCL, 1, 9)>;    /* P1.09 */
+		};
+	};
+
+	i2c0_sleep: i2c0_sleep {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 11)>,
+				<NRF_PSEL(TWIM_SCL, 1, 9)>;
+			low-power-enable;
+		};
+	};
+};
+
+/*
+ * DC/DC regulator on. BOTH stock halves write 1 to POWER+0x578 (DCDCEN) at
+ * boot -- that address IS this node's reg, so the vendor qualified the DC/DC
+ * inductor circuit on this PCB. nrf52/soc.c applies this property at init.
+ */
+&reg1 {
+	regulator-initial-mode = <NRF5X_REG_MODE_DCDC>;
+};
+
+&adc { status = "okay"; };
+&gpio0 { status = "okay"; };
+/*
+ * GPIOTE must be enabled or gpio_nrfx.c fails a static assert:
+ * "Please enable GPIOTE instance for used GPIO port!". Zephyr's nRF GPIO driver
+ * pulls in nrfx_gpiote unconditionally, and every enabled GPIO port needs an
+ * instance behind it -- this is not optional even though our kscan polls the
+ * I2C expanders rather than using nRF interrupts.
+ */
+&gpiote {
+	status = "okay";
+};
+
+&gpio1 { status = "okay"; };
+&usbd { status = "okay"; };
+
+/*
+ * Flash layout must match the stock Adafruit UF2 bootloader, which jumps to the
+ * application at 0x27000 (the standard Adafruit-nRF52 app offset).
+ *
+ * ZMK uses Zephyr's own BLE stack, not the Nordic SoftDevice, so the 0x1000-0x27000
+ * SoftDevice region is dead space here. ZMK's `nrf52833-nosd` snippet reclaims it
+ * (280 KB -> 428 KB). Build with `-S nrf52833-nosd` if you want the extra room;
+ * the layout below is the conservative one that leaves the bootloader untouched.
+ */
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/*
+		 * nRF52833 has 512 KB (0x80000) of flash -- NOT 1 MB. An earlier
+		 * version of this file used nRF52840 offsets and ran to 0x100000,
+		 * i.e. double the real flash, with a code partition that would have
+		 * overlapped the bootloader. Anything that overwrites the bootloader
+		 * on a device with no reset button is an unrecoverable brick, so
+		 * these numbers matter more here than usual.
+		 *
+		 * App entry at 0x27000 is the one hard fact: every stock .uf2, for
+		 * both halves and the dongle, has its first block targeting 0x27000.
+		 * The top 48 KB is the Adafruit bootloader and its settings.
+		 *
+		 * 276 KB of code space, matching the ~280 KB expected for this part with
+		 * the SoftDevice region reserved.
+		 *
+		 * DO NOT use ZMK's `nrf52833-nosd` snippet here. It relocates the code
+		 * partition to 0x1000, which is only valid for bootloaders that jump
+		 * there. This one jumps to 0x27000, so the resulting image would not
+		 * boot. Reclaiming that 156 KB would mean replacing the vendor
+		 * bootloader, which we are explicitly not doing.
+		 */
+		sd_partition: partition@0 {
+			label = "softdevice";
+			reg = <0x00000000 0x00027000>;
+		};
+
+		code_partition: partition@27000 {
+			label = "code";
+			reg = <0x00027000 0x00045000>;
+		};
+
+		storage_partition: partition@6c000 {
+			label = "storage";
+			reg = <0x0006c000 0x00008000>;
+		};
+
+		boot_partition: partition@74000 {
+			label = "adafruit_boot";
+			reg = <0x00074000 0x0000c000>;
+		};
+	};
+};

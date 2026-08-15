@@ -1,0 +1,47 @@
+# Copyright (c) 2026 nocfree-zmk contributors
+# SPDX-License-Identifier: MIT
+
+description: |
+  NocFree "&" three-position output-mode slide switch.
+
+  The stock firmware reads two GPIOs and decodes THREE states from them, using
+  "neither pin asserted" as the third. Both pins are INPUT_PULLUP and the slide
+  contact shorts one of them to ground:
+
+      2.4ghz-gpios asserted  ->  2.4 GHz   (dongle)
+      bluetooth-gpios asserted ->  Bluetooth
+      neither asserted       ->  wired     (USB)
+
+  Note this is NOT the same shape as ZMK's `zmk_uno` SP3T example, which uses
+  three GPIOs, one per detent, and drives `zmk,kscan-gpio-direct` in
+  `toggle-mode`. That approach cannot express this switch: entering the wired
+  position only produces a RELEASE of the previously asserted pin and no press,
+  so a sideband binding would never fire and the endpoint would never return to
+  USB. Hence a dedicated decoder.
+
+  The switch shorts one of two pins (P0.17, P0.15) to ground, both otherwise
+  held high via internal pull-ups, read with a CHANGE interrupt.
+
+compatible: "nocfree,mode-switch"
+
+include: base.yaml
+
+properties:
+  bluetooth-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      Asserted when the switch is in the Bluetooth position. P0.15,
+      active low with an internal pull-up.
+
+  dongle-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      Asserted when the switch is in the 2.4 GHz position. P0.17,
+      active low with an internal pull-up.
+
+      This pin short-circuits the truth table: when it is
+      asserted the Bluetooth pin is never sampled at all. This driver keeps
+      that precedence, so if both read asserted (a transient mid-slide, or a
+      wiring fault) 2.4 GHz wins -- matching the vendor exactly.

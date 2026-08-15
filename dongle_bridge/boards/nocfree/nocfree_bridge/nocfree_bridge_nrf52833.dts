@@ -1,0 +1,67 @@
+/dts-v1/;
+#include <nordic/nrf52833_qiaa.dtsi>
+
+/*
+ * NocFree & dongle — bridge board (no keys, no expanders).
+ * Flash layout MUST match stock UF2 entry 0x27000 and Adafruit bootloader
+ * at top of 512 KB. Wrong offsets can erase the bootloader = brick.
+ *
+ * Bootloader entry: recovery.c / trial_autodfu.c write GPREGRET=0x57 directly
+ * (same as stock/ZMK). No ZMK boot-mode mapper DTS required.
+ */
+
+/ {
+	model = "NocFree Dongle Bridge";
+	compatible = "nocfree,bridge";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &code_partition;
+		zephyr,console = &cdc_acm_uart;
+		/* zephyr,bt-hci comes from nrf52833.dtsi (&bt_hci_controller) */
+	};
+};
+
+&gpio0 { status = "okay"; };
+&gpio1 { status = "okay"; };
+
+&gpiote {
+	status = "okay";
+};
+
+&usbd {
+	status = "okay";
+	cdc_acm_uart: cdc_acm_uart {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};
+
+/* Same Adafruit layout as halves/stock dongle — do not invent partitions. */
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		sd_partition: partition@0 {
+			label = "softdevice";
+			reg = <0x00000000 0x00027000>;
+		};
+
+		code_partition: partition@27000 {
+			label = "code";
+			reg = <0x00027000 0x00045000>;
+		};
+
+		storage_partition: partition@6c000 {
+			label = "storage";
+			reg = <0x0006c000 0x00008000>;
+		};
+
+		boot_partition: partition@74000 {
+			label = "adafruit_boot";
+			reg = <0x00074000 0x0000c000>;
+		};
+	};
+};

@@ -1,0 +1,78 @@
+# !!! LEFTOVER DONGLE-CENTRAL TOPOLOGY -- DO NOT FLASH THIS BUILD !!!
+# It makes the dongle the split central, which deletes the wired and bluetooth
+# positions from the halves. The real dongle firmware is the phase-2 BLE-HID
+# bridge (see PLAN.md), which is not written yet. This file exists only so the
+# board still compiles.
+#
+# HWMv2: the SoC is selected by board.yml + Kconfig.<board>, NOT here.
+# Only application-level configuration belongs in this file.
+
+CONFIG_CLOCK_CONTROL_NRF=y
+# XTAL is UNVERIFIED on this hardware. If no 32.768 kHz crystal is fitted the
+# LFXO never starts and boot hangs BEFORE usb_enable(), so the CDC recovery
+# shim never runs -- the one brick recovery.c cannot save you from. Use the
+# internal RC until the crystal is confirmed (mild power cost, always works).
+# CONFIG_CLOCK_CONTROL_NRF_K32SRC_XTAL=y
+CONFIG_CLOCK_CONTROL_NRF_K32SRC_RC=y
+CONFIG_CLOCK_CONTROL_NRF_K32SRC_500PPM=y
+
+CONFIG_ARM_MPU=y
+CONFIG_GPIO=y
+CONFIG_PINCTRL=y
+
+# No expanders on the dongle -- it has no keys.
+
+# USB HID to the host, plus the CDC port that is this device's ONLY way back
+# into the bootloader (no keys means &bootloader can never be bound).
+CONFIG_USB_DEVICE_STACK=y
+CONFIG_USB_DEVICE_PRODUCT="NocFree ZMK Dongle"
+# USB identity: distinct from stock (0x8029) so you can always tell at a glance
+# which firmware a device is running. VID stays as the vendor's.
+CONFIG_USB_DEVICE_VID=0x2886
+CONFIG_USB_DEVICE_PID=0x9029
+CONFIG_USB_CDC_ACM=y
+CONFIG_SERIAL=y
+CONFIG_CONSOLE=y
+CONFIG_UART_CONSOLE=y
+CONFIG_UART_LINE_CTRL=y
+
+# Central: connects to BOTH halves as peripherals.
+CONFIG_BT=y
+CONFIG_BT_CENTRAL=y
+
+CONFIG_ZMK_USB=y
+CONFIG_ZMK_BLE=y
+CONFIG_ZMK_SPLIT=y
+CONFIG_ZMK_SPLIT_ROLE_CENTRAL=y
+
+CONFIG_ZMK_SPLIT_BLE_CENTRAL_PERIPHERALS=2
+
+# Bus-powered: no battery, and it must never sleep or the host loses the keyboard.
+CONFIG_ZMK_BATTERY_REPORTING=n
+CONFIG_ZMK_SLEEP=n
+
+CONFIG_NVS=y
+CONFIG_SETTINGS_NVS=y
+CONFIG_FLASH=y
+CONFIG_FLASH_MAP=y
+CONFIG_FLASH_PAGE_LAYOUT=y
+
+CONFIG_BUILD_OUTPUT_UF2=y
+CONFIG_USE_DT_CODE_PARTITION=y
+
+# Recovery seatbelt: no reset pinhole on the halves, no keys on the dongle.
+CONFIG_NOCFREE_USB_RECOVERY=y
+CONFIG_REBOOT=y
+
+# --- Bootloader entry (ZMK main / Zephyr 4.1) ---------------------------------
+# Zephyr 3.6 removed the old GPREGRET reboot mechanism. &bootloader now works via
+# the retention/bootmode path, which needs these three symbols plus the
+# nrf52833_uf2_boot_mode.dtsi include. Without them &bootloader is a plain reset
+# and the all-keys recovery layer is decorative.
+CONFIG_RETAINED_MEM=y
+CONFIG_RETENTION=y
+CONFIG_RETENTION_BOOT_MODE=y
+
+# recovery.c uses printk, not the logging subsystem: CONFIG_LOG costs ~20 KB of
+# flash and the dongle build is already at 97% of its 276 KB partition. printk
+# keeps the diagnostics without the subsystem.

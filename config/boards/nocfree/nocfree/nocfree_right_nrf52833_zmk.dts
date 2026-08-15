@@ -1,0 +1,121 @@
+/dts-v1/;
+#include <dt-bindings/pwm/pwm.h>
+#include "nocfree.dtsi"
+
+/ {
+	model = "NocFree & Right";
+	compatible = "nocfree,right";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,console = &cdc_acm_uart;
+		zmk,battery = &vbatt;
+		/* Same contract as the left: backlight.c takes DEVICE_DT_GET of the
+		 * chosen and iterates its CHILDREN as the LED channels. */
+		zmk,backlight = &pwmleds;
+	};
+
+	/*
+	 * Backlight -- the right PCB has the LED rail on the same pwm2/P0.20 as
+	 * the left half. Polarity normal (proven on the left).
+	 * Brightness follows the left via the split backlight sync
+	 * (CONFIG_NOCFREE_BACKLIGHT_SYNC on the central).
+	 */
+	pwmleds: pwmleds {
+		compatible = "pwm-leds";
+		backlight_pwm: backlight {
+			pwms = <&pwm2 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
+			label = "Backlight";
+		};
+	};
+};
+
+&pwm2 {
+	status = "okay";
+	pinctrl-0 = <&pwm2_default>;
+	pinctrl-1 = <&pwm2_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&pinctrl {
+	pwm2_default: pwm2_default {
+		group1 {
+			psels = <NRF_PSEL(PWM_OUT0, 0, 20)>;	/* P0.20 */
+		};
+	};
+
+	pwm2_sleep: pwm2_sleep {
+		group1 {
+			psels = <NRF_PSEL(PWM_OUT0, 0, 20)>;
+			low-power-enable;
+		};
+	};
+};
+
+/*
+ * Right half battery hardware pins (differ from the left):
+ * P0.04 = battery sense (AIN2); P0.31 = divider enable.
+ * NOTE P0.05 on the right is the expander INT, not the divider enable —
+ * driving P0.05 here (as on the left) breaks INT. Verified on hardware.
+ */
+&vbatt {
+	status = "okay";
+	power-gpios = <&gpio0 31 GPIO_ACTIVE_HIGH>;
+};
+
+/*
+ * Right expander INT = P0.05 (not left's P0.31).
+ * No mode-slider GPIOs on right; unbrick if INT wake fails = battery power
+ * switch off→on (cuts Vbat — full reset, no case open).
+ */
+&expander_int_wake0 {
+	int-gpios = <&gpio0 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+	/delete-property/ extra-gpios;
+};
+
+/* Soft-off wake on right INT (central triggers soft-off over split). */
+/ {
+	keys {
+		compatible = "gpio-keys";
+		soft_off_wake_key: soft_off_wake_key {
+			gpios = <&gpio0 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Expander INT soft-off wake";
+		};
+	};
+
+	soft_off_waker: soft_off_waker {
+		compatible = "zmk,gpio-key-wakeup-trigger";
+		trigger = <&soft_off_wake_key>;
+		wakeup-source;
+	};
+
+	soft_off_wakers {
+		compatible = "zmk,soft-off-wakeup-sources";
+		status = "okay";
+		wakeup-sources = <&soft_off_waker>;
+	};
+};
+
+/* Right's status LED is P0.17 (the dtsi default P0.09 is the LEFT's LED). */
+&status_led {
+	gpios = <&gpio0 17 GPIO_ACTIVE_HIGH>;
+};
+
+/* The right half runs this I2C bus at 100 kHz (the dtsi's 400 kHz is a
+ * left-only fact); the right PCB is not reliable at fast mode. */
+&i2c0 {
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+};
+
+&usbd {
+	status = "okay";
+	cdc_acm_uart: cdc_acm_uart {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};
+
+&default_transform {
+	col-offset = <48>;
+};
+

@@ -1,0 +1,123 @@
+# Shared defaults for all three NocFree boards.
+
+if BOARD_NOCFREE_LEFT || BOARD_NOCFREE_RIGHT || BOARD_NOCFREE_DONGLE
+
+config ZMK_KEYBOARD_NAME
+	default "NocFree &"
+
+# Key inputs hang off three PCA9555 I2C expanders; without these there is no
+# kscan at all.
+config I2C
+	default y
+
+config GPIO_PCA95XX
+	default y
+
+# Expander GPIOs come up over I2C, so they must initialise before kscan.
+config GPIO_PCA95XX_INIT_PRIORITY
+	default 60
+
+config KSCAN_INIT_PRIORITY
+	default 70
+
+endif
+
+# ---------------------------------------------------------------------------
+# TOPOLOGY: the LEFT HALF is the central. See RECOVERY.md / TODO.md for why.
+#
+# The target is stock's three switch positions, which requires the left half to
+# hold the HID stack:
+#     wired      -> USB cable straight into the left half
+#     bluetooth  -> left half pairs directly to any device, no dongle involved
+#     2.4GHz     -> left half talks to the dongle, which re-presents as USB
+#
+# Only a CENTRAL can do any of that. `zmk/app/CMakeLists.txt:48` gates hid.c and
+# every behavior implementation behind
+#     (NOT CONFIG_ZMK_SPLIT) OR CONFIG_ZMK_SPLIT_ROLE_CENTRAL
+# so a peripheral image does not CONTAIN the HID stack -- no runtime setting can
+# reach code that was never compiled. That is why the earlier dongle-central
+# build could never have supported the wired or bluetooth positions.
+#
+# In this arrangement the dongle is just another paired BLE host as far as the
+# keyboard is concerned, so the keyboard firmware needs no special support for
+# it. That work is confined to the dongle (phase 2).
+# ---------------------------------------------------------------------------
+
+if BOARD_NOCFREE_LEFT
+
+config ZMK_SPLIT
+	default y
+
+config ZMK_SPLIT_ROLE_CENTRAL
+	default y
+
+# One peripheral: the right half.
+config ZMK_SPLIT_BLE_CENTRAL_PERIPHERALS
+	default 1
+
+# The wired position. Legal here ONLY because this board is the central:
+# ZMK compiles usb_hid.c whenever ZMK_USB is set but only compiles hid.c for
+# non-split or central builds, so ZMK_USB on a PERIPHERAL fails to link with
+# undefined references to zmk_hid_get_keyboard_report(). Central is fine.
+config ZMK_USB
+	default y
+
+# The bluetooth position, and also the transport to the dongle in phase 2.
+config ZMK_BLE
+	default y
+
+endif
+
+if BOARD_NOCFREE_RIGHT
+
+config ZMK_SPLIT
+	default y
+
+# Peripheral: relays its 48 positions to the left half.
+config ZMK_SPLIT_ROLE_CENTRAL
+	default n
+
+# REQUIRED. ZMK_SPLIT_BLE depends on ZMK_BLE, and ZMK_BLE has no default (see
+# zmk/app/Kconfig). Without this the half builds with NO SPLIT TRANSPORT AT ALL:
+# only src/split/peripheral.c compiles, none of split/bluetooth/, and every key
+# event is silently dropped. It boots and does nothing.
+config ZMK_BLE
+	default y
+
+# Must stay OFF on a peripheral -- see the link failure described above.
+# The raw USB stack and CDC ACM are still enabled in the defconfig, because the
+# recovery shim needs the serial port. recovery.c calls usb_enable() itself when
+# ZMK_USB is off, since nothing else will.
+config ZMK_USB
+	default n
+
+# Delayed boot re-assert of the backlight — ON_START alone leaves this board's
+# peripheral dark at boot (proven by trial 2026-08-15; see Kconfig help).
+config NOCFREE_BACKLIGHT_BOOT_ON
+	default y
+
+endif
+
+if BOARD_NOCFREE_DONGLE
+
+config ZMK_SPLIT
+	default y
+
+config ZMK_SPLIT_ROLE_CENTRAL
+	default y
+
+# Two peripherals: left half and right half.
+config ZMK_SPLIT_BLE_CENTRAL_PERIPHERALS
+	default 2
+
+config ZMK_USB
+	default y
+
+config ZMK_BLE
+	default y
+
+# Bus-powered, no battery.
+config ZMK_BATTERY_REPORTING
+	default n
+
+endif

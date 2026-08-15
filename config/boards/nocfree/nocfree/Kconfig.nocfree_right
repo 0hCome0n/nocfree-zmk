@@ -1,0 +1,7 @@
+config BOARD_NOCFREE_RIGHT
+	select SOC_NRF52833_QIAA
+	# Bootloader entry needs the retention/bootmode path on ZMK main; without
+	# these &bootloader is a plain reset. See RECOVERY.md.
+	imply RETAINED_MEM
+	imply RETENTION
+	imply RETENTION_BOOT_MODE

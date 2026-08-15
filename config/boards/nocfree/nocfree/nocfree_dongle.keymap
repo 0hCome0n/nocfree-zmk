@@ -1,0 +1,110 @@
+/*
+ * NOTE: this file IS the build's keymap for this board (ZMK picks <board>.keymap).
+ * The left and right keymaps are intentionally identical during bring-up. There is
+ * no separate "discover" keymap any more -- an earlier version had one that was
+ * never built, because nothing includes it.
+ */
+/*
+ * DONGLE (central) bring-up keymap -- 96 positions.
+ *
+ * In a ZMK dongle setup the keymap runs on the CENTRAL, and position events arrive
+ * from both peripherals. So the central sees 48 (left) + 48 (right) = 96 positions,
+ * NOT 48. Which half owns which half of the range depends on peripheral connection
+ * order -- part of what the discovery pass establishes.
+ *
+ * &bootloader is source-specific: pressing a binding at a LEFT position resets the
+ * LEFT half, even though the keymap lives here. That is how the halves stay
+ * recoverable without their own keymaps.
+ *
+ * Layer 0: every position emits a distinct identifier, so pressing a key tells you
+ *          its position number. 0-47 -> A..Z,N0..N9,F1..F12 ; 48-95 -> same again
+ *          with LEFT_SHIFT held, so they arrive as capitals/shifted symbols.
+ * Layer 1: every position is &bootloader. Reached by holding position 0.
+ */
+
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+
+/ {
+
+	/*
+	 * DONGLE-INTO-DFU COMBO -- the ZMK equivalent of the vendor's Fn+6.
+	 *
+	 * &bootloader is normally "source-specific": pressing it on a half resets
+	 * THAT half. Combos are the documented exception -- they always invoke
+	 * reset behaviours on the CENTRAL. Since the dongle is the central, a combo
+	 * pressed on either half drops the DONGLE into its UF2 bootloader, exactly
+	 * like Fn+6 does on stock firmware.
+	 *   https://zmk.dev/docs/keymaps/behaviors/reset
+	 *
+	 * WHAT THIS IS AND IS NOT:
+	 *   It replaces Fn+6 for everyday use -- reflashing the dongle without
+	 *   unplugging anything or running a script.
+	 *   It is NOT a bootstrap recovery. It needs the split link up and kscan
+	 *   working. If the dongle boots but cannot talk to the halves, this cannot
+	 *   help; that is what the 1200-baud USB touch in recovery.c is for.
+	 *
+	 * POSITIONS ARE PLACEHOLDERS. 0 and 47 are chosen only because they are far
+	 * apart and unlikely to be struck together. Once the pin->key mapping is
+	 * known, move these to something deliberate and awkward (the vendor picked
+	 * Fn+6 for a reason) so it cannot fire while typing.
+	 */
+	combos {
+		compatible = "zmk,combos";
+
+		dongle_bootloader {
+			bindings = <&bootloader>;
+			key-positions = <0 47>;
+			timeout-ms = <50>;
+			require-prior-idle-ms = <500>;
+		};
+	};
+
+	keymap {
+		compatible = "zmk,keymap";
+
+		discover_layer: layer_0 {
+			display-name = "Discover";
+			bindings = <
+				&mo 1             &kp B             &kp C             &kp D             &kp E             &kp F
+				&kp G             &kp H             &kp I             &kp J             &kp K             &kp L
+				&kp M             &kp N             &kp O             &kp P             &kp Q             &kp R
+				&kp S             &kp T             &kp U             &kp V             &kp W             &kp X
+				&kp Y             &kp Z             &kp N0            &kp N1            &kp N2            &kp N3
+				&kp N4            &kp N5            &kp N6            &kp N7            &kp N8            &kp N9
+				&kp F1            &kp F2            &kp F3            &kp F4            &kp F5            &kp F6
+				&kp F7            &kp F8            &kp F9            &kp F10           &kp F11           &kp F12
+				&kp LS(A)         &kp LS(B)         &kp LS(C)         &kp LS(D)         &kp LS(E)         &kp LS(F)
+				&kp LS(G)         &kp LS(H)         &kp LS(I)         &kp LS(J)         &kp LS(K)         &kp LS(L)
+				&kp LS(M)         &kp LS(N)         &kp LS(O)         &kp LS(P)         &kp LS(Q)         &kp LS(R)
+				&kp LS(S)         &kp LS(T)         &kp LS(U)         &kp LS(V)         &kp LS(W)         &kp LS(X)
+				&kp LS(Y)         &kp LS(Z)         &kp LS(N0)        &kp LS(N1)        &kp LS(N2)        &kp LS(N3)
+				&kp LS(N4)        &kp LS(N5)        &kp LS(N6)        &kp LS(N7)        &kp LS(N8)        &kp LS(N9)
+				&kp LS(F1)        &kp LS(F2)        &kp LS(F3)        &kp LS(F4)        &kp LS(F5)        &kp LS(F6)
+				&kp LS(F7)        &kp LS(F8)        &kp LS(F9)        &kp LS(F10)       &kp LS(F11)       &kp LS(F12)
+			>;
+		};
+
+		recovery_layer: layer_1 {
+			display-name = "Recovery";
+			bindings = <
+				&trans         &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+				&bootloader    &bootloader    &bootloader    &bootloader    &bootloader    &bootloader
+			>;
+		};
+	};
+};

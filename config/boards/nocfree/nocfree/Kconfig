@@ -1,0 +1,316 @@
+config NOCFREE_BATTERY_STOCK_CURVE
+	bool "Use NocFree stock ADC→percent curve (not ZMK generic LiPo)"
+	default y
+	depends on ZMK_BATTERY_VOLTAGE_DIVIDER
+	help
+	  Stock firmware maps pin millivolts as:
+	    percent = clamp(((mV/33) - 70) * 10 / 3, 0, 100)
+	  (0% ≈ 2310 mV at the divider, 100% ≈ 3300 mV). ZMK's default LiPo
+	  curve systematically under-reports and shows ~0–3% for mid packs.
+	  Enable on both halves so split battery fetch compares like scales.
+
+config NOCFREE_BATTERY_BAS_MIN
+	bool "Host BAS = min(central, peripherals) for typical split UX"
+	default y
+	depends on ZMK_SPLIT_ROLE_CENTRAL && ZMK_BATTERY_REPORTING && BT_BAS
+	depends on ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING
+	help
+	  Windows/phone see one battery bar. Report the lower of left and
+	  right so either half low is visible. Requires split battery fetch.
+
+config NOCFREE_USB_RECOVERY
+	bool "1200-baud USB touch reboots into the UF2 bootloader"
+	default y
+	depends on USB_CDC_ACM
+	select REBOOT
+	select UART_LINE_CTRL
+	help
+	  Replicates the recovery path the stock firmware provides (and which
+	  flashing ZMK would otherwise delete): when the host opens the CDC ACM
+	  port at 1200 baud and then drops DTR, reboot into the Adafruit UF2
+	  bootloader.
+
+	  This is the ONLY way back into the bootloader on the dongle, which has
+	  no keys to bind &bootloader to, and the only key-free way back on the
+	  halves, which have no reset pinhole. Do not disable it unless you have
+	  another proven route.
+
+config NOCFREE_USB_RECOVERY_BAUD
+	int "Baud rate that triggers recovery"
+	default 1200
+	depends on NOCFREE_USB_RECOVERY
+	help
+	  1200 matches the stock firmware and the Arduino convention, so existing
+	  tooling (dfu_touch.py, arduino-cli, most flashers) works unchanged.
+
+config NOCFREE_USB_RECOVERY_POLL_MS
+	int "How often to sample the CDC line state, milliseconds"
+	default 15
+	depends on NOCFREE_USB_RECOVERY
+	help
+	  The trigger needs one poll to see DTR high and a later poll to see it
+	  low. A tool that opens and closes the port faster than one poll period
+	  leaves no observable edge and recovery silently will not fire, so keep
+	  this well under a typical touch duration. 100 ms was too slow.
+
+config NOCFREE_EXPANDER_POLARITY_CLEAR
+	bool "Clear the PCA9555 polarity-inversion registers at boot"
+	default y if BOARD_NOCFREE_LEFT || BOARD_NOCFREE_RIGHT
+	depends on I2C
+	help
+	  Stock firmware programs the expanders' polarity-inversion registers
+	  (0x04/0x05 = 0xFF) on every boot, the registers survive until the
+	  expanders lose POWER, and Zephyr's pca95xx driver never writes them.
+	  A half flashed warm therefore reads every idle key as pressed under
+	  ZMK. Six idempotent I2C bytes at boot remove the trap permanently.
+	  Believed to be what killed the right half on 2026-08-08.
+
+config NOCFREE_TRIAL_AUTODFU
+	bool "TRIAL ONLY: return to the UF2 bootloader automatically after a delay"
+	default n
+	select REBOOT
+	help
+	  Dead-man's switch for the FIRST flash of a device that cannot otherwise
+	  be recovered (the dongle has no keys; the halves have no reset button).
+
+	  Reboots into the UF2 bootloader unconditionally after
+	  NOCFREE_TRIAL_AUTODFU_SECONDS, using the same GPREGRET-then-cold-reset
+	  path recovery.c relies on. A successful trial proves the image boots,
+	  USB enumerates, and that mechanism really does reach the bootloader --
+	  while the device is guaranteed to come back on its own.
+
+	  NEVER enable this in a build you intend to keep: the device will drop
+	  into DFU mid-use.
+
+config NOCFREE_TRIAL_AUTODFU_SECONDS
+	int "Seconds before the trial build returns to the bootloader"
+	default 120
+	depends on NOCFREE_TRIAL_AUTODFU
+	help
+	  Long enough to confirm enumeration and poke at the device, short enough
+	  that you are not waiting around. Two minutes is a reasonable default.
+
+config NOCFREE_TRIAL_AUTODFU_WDT_SECONDS
+	int "Watchdog backstop for the trial build, seconds"
+	default 180
+	depends on NOCFREE_TRIAL_AUTODFU
+	help
+	  The trial build arms a hardware watchdog at PRE_KERNEL_1 and never
+	  feeds it, so a hang ANYWHERE -- including before SYS_INIT reaches
+	  APPLICATION level, where the delayed work item lives -- still resets
+	  into the UF2 bootloader. Without this, an image that the bootloader
+	  accepts but that faults during early init would be unrecoverable on a
+	  device with no keys and no reset pinhole.
+
+	  Must be greater than NOCFREE_TRIAL_AUTODFU_SECONDS (enforced by a
+	  BUILD_ASSERT), otherwise the watchdog fires first and the trial proves
+	  nothing about the GPREGRET path it exists to validate.
+
+config NOCFREE_CLOCK_PROBE
+	bool "TRIAL ONLY: probe for a 32.768 kHz crystal, report over CDC"
+	default n
+	help
+	  Answers a hardware question you cannot get from software alone: whether
+	  the PCB actually carries a 32.768 kHz crystal. Tries to start the LFXO by
+	  hand before BLE claims LFCLK, watches EVENTS_LFCLKSTARTED, restores RC
+	  either way, and re-prints the verdict over the CDC console for a minute.
+
+	  Exists so the CONFIG_CLOCK_CONTROL_NRF_K32SRC_RC hedge can be dropped
+	  if (and only if) the probe proves the crystal. Combine with trial.conf;
+	  never enable in a keeper.
+
+config NOCFREE_KEY_SELFTEST
+	bool "TRIAL ONLY: synthetically press every position for host capture"
+	default n
+	depends on ZMK_SPLIT_ROLE_CENTRAL
+	help
+	  Raises each keymap position 0..95 as a synthetic local press+release
+	  so the host can diff the HID output against the emitter's expectations
+	  without physical key presses. Base layer only; cannot touch bonds,
+	  layers, or flash. Combine with trial.conf -- never enable in a keeper.
+
+config NOCFREE_KEY_SELFTEST_START_DELAY_MS
+	int "Delay before the selftest begins, milliseconds"
+	default 10000
+	depends on NOCFREE_KEY_SELFTEST
+
+config NOCFREE_KEY_SELFTEST_STEP_MS
+	int "Cadence per position (press start to next press start), ms"
+	default 400
+	depends on NOCFREE_KEY_SELFTEST
+
+config NOCFREE_KEY_SELFTEST_PRESS_MS
+	int "How long each synthetic key is held down, ms"
+	default 110
+	depends on NOCFREE_KEY_SELFTEST
+	help
+	  Must be shorter than NOCFREE_KEY_SELFTEST_STEP_MS.
+
+config NOCFREE_BACKLIGHT_PROBE
+	bool "TRIAL ONLY: walk the backlight pin through DC/PWM states"
+	default n
+	depends on PWM && ZMK_BACKLIGHT
+	help
+	  Cycles P0.20 through steady LOW / steady HIGH / PWM 50% normal /
+	  PWM 50% inverted with CDC narration so the electrical sense of the
+	  LED rail can be identified by eye in one boot. Left half only.
+	  Never enable in a keeper.
+
+config NOCFREE_BACKLIGHT_PROBE_START_DELAY_MS
+	int "Delay before the backlight probe begins, milliseconds"
+	default 6000
+	depends on NOCFREE_BACKLIGHT_PROBE
+
+config NOCFREE_BACKLIGHT_PROBE_STEP_SECONDS
+	int "How long each probe step is held, seconds"
+	default 3
+	depends on NOCFREE_BACKLIGHT_PROBE
+
+config NOCFREE_BACKLIGHT_SYNC
+	bool "Mirror the central's backlight state to split peripherals"
+	default n
+	depends on ZMK_BACKLIGHT && ZMK_SPLIT_ROLE_CENTRAL
+	help
+	  Polls the central backlight state (1 Hz) and pushes ON/OFF and
+	  BL_SET <brightness> to every connected peripheral over the split
+	  transport's run-behavior channel, so both halves' LED rails track
+	  the &bl keys. Central side only; peripherals just need
+	  CONFIG_ZMK_BACKLIGHT and their own pwmleds node.
+
+config NOCFREE_BACKLIGHT_SYNC_POLL_MS
+	int "Backlight sync poll interval, milliseconds"
+	default 1000
+	depends on NOCFREE_BACKLIGHT_SYNC
+
+config NOCFREE_ACTIVITY_SYNC
+	bool "Push session activity to the peripheral (central only)"
+	default y
+	depends on NOCFREE_BACKLIGHT_SYNC
+	help
+	  The halves track idle independently: the peripheral only counts ITS OWN
+	  keys, so left-heavy use lets the right idle-off its backlight at the
+	  idle timeout and DEEP SLEEP mid-session at the sleep timeout. The
+	  central sees every key from both halves, so while it is ACTIVE, push a
+	  sentinel "nudge" invoke to the peripheral; the patched split peripheral
+	  handler resets its idle clock on any invoke. Both halves then idle and
+	  sleep on the session clock, together.
+
+config NOCFREE_ACTIVITY_SYNC_PERIOD_MS
+	int "Activity nudge period while active, milliseconds"
+	default 10000
+	depends on NOCFREE_ACTIVITY_SYNC
+	help
+	  Well under the 5-minute idle timeout; one tiny invoke per period while
+	  typing is negligible radio/battery cost.
+
+config NOCFREE_BACKLIGHT_SYNC_START_DELAY_MS
+	int "Delay before the first backlight sync push, milliseconds"
+	default 15000
+	depends on NOCFREE_BACKLIGHT_SYNC
+
+config NOCFREE_BACKLIGHT_BOOT_ON
+	bool "Force the peripheral backlight on shortly after boot"
+	default n
+	depends on ZMK_BACKLIGHT && !ZMK_SPLIT_ROLE_CENTRAL
+	help
+	  EMPIRICALLY REQUIRED (2026-08-15 trial): ZMK_BACKLIGHT_ON_START alone
+	  leaves this board's peripheral dark at boot — the init-time apply does
+	  not reach the LED (init ordering vs this board's backlight path), so a
+	  delayed re-assert is needed. NOTE the original 08-12 header blamed a
+	  persisted-OFF restore; that was wrong (peripheral backlight settings
+	  are compiled out by the zmk-local patch). The 08-14 review flagged the
+	  false premise and the module was briefly deleted — the very next trial
+	  booted dark, so it is back with the honest rationale.
+
+config NOCFREE_BACKLIGHT_BOOT_ON_DELAY_MS
+	int "Delay after boot before forcing the backlight on, milliseconds"
+	default 1000
+	depends on NOCFREE_BACKLIGHT_BOOT_ON
+
+config NOCFREE_MODE_SWITCH
+	bool "Three-position output-mode slide switch"
+	default y if BOARD_NOCFREE_LEFT
+	depends on ZMK_BLE && SETTINGS
+	help
+	  Decodes the stock keyboard's physical three-position switch and selects
+	  the matching ZMK output:
+
+	      wired      -> USB HID
+	      bluetooth  -> BLE, on NOCFREE_MODE_SWITCH_BT_PROFILE
+	      2.4GHz     -> BLE, on NOCFREE_MODE_SWITCH_DONGLE_PROFILE
+
+	  The switch is two GPIOs encoding three states, with "neither asserted"
+	  meaning wired. That is why this cannot be expressed with ZMK's existing
+	  `toggle-mode` kscan and sideband-behavior recipe (as used by the zmk_uno
+	  shield): that pattern needs one GPIO per position, and here entering the
+	  wired position produces only a release, which would fire no binding and
+	  leave the endpoint stuck.
+
+	  Requires a `mode_switch` devicetree node. Only meaningful on a central --
+	  a peripheral has no HID stack to point anywhere.
+
+if NOCFREE_MODE_SWITCH
+
+config NOCFREE_MODE_SWITCH_DONGLE_PROFILE
+	int "BLE profile reserved for the 2.4 GHz dongle"
+	default 0
+	range 0 4
+	help
+	  In ZMK the dongle is not a distinct transport -- it is an ordinary BLE
+	  host that re-presents the keyboard as USB on the far side. So the 2.4 GHz
+	  switch position simply selects this profile.
+
+	  Keep the dongle bonded here and do not use this profile for anything
+	  else, or the 2.4 GHz position will connect to the wrong host.
+
+config NOCFREE_MODE_SWITCH_BT_PROFILE
+	int "BLE profile the bluetooth position falls back to"
+	default 1
+	range 0 4
+	help
+	  Used ONLY when the switch enters the bluetooth position while the dongle
+	  profile happens to be active -- otherwise the profile you last chose with
+	  `&bt BT_SEL` is left alone, so the switch does not fight your keybinds.
+
+	  Must differ from NOCFREE_MODE_SWITCH_DONGLE_PROFILE.
+
+config NOCFREE_MODE_SWITCH_DEBOUNCE_MS
+	int "Quiet period required after a switch edge, milliseconds"
+	default 30
+	help
+	  Each edge reschedules the deadline, so the mode is applied once the
+	  contact has been quiet for this long. 30 ms matches the stock firmware.
+
+config NOCFREE_MODE_SWITCH_APPLY_DELAY_MS
+	int "Delay between settings commit and the first mode selection, ms"
+	default 50
+	help
+	  Not load-bearing for correctness. Commit ORDER is already guaranteed by
+	  registering at cprio 1, which Zephyr runs strictly after ZMK's cprio-0
+	  handlers. This delay only moves the BLE calls off main()'s context and
+	  onto the system workqueue, and gives the stack a moment after
+	  zmk_ble_complete_startup.
+
+config NOCFREE_MODE_SWITCH_REBOOT
+	bool "Reboot on a switch change instead of re-selecting live"
+	default n
+	select REBOOT
+	help
+	  Reproduces the stock firmware: on a change it debounces and then warm-
+	  resets (SCB->AIRCR write). ZMK can change endpoints at runtime, so this
+	  is off by default -- turn it on only if live switching proves unreliable.
+
+	  A WARM reset is used, because a cold one would clear the GPREGRET the
+	  recovery shim relies on.
+
+config NOCFREE_MODE_SWITCH_INIT_PRIORITY
+	int "Init priority for configuring the switch GPIOs"
+	default 99
+	help
+	  Only configures pins and installs interrupt callbacks -- it deliberately
+	  does NOT select an endpoint, because settings_load() has not run at any
+	  SYS_INIT level and would overwrite the choice. Must be after
+	  GPIO_PCA95XX_INIT_PRIORITY only incidentally; the switch is on the SoC's
+	  own GPIO, not an expander.
+
+endif

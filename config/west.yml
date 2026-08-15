@@ -1,0 +1,14 @@
+manifest:
+  remotes:
+    - name: zmkfirmware
+      url-base: https://github.com/zmkfirmware
+  projects:
+    - name: zmk
+      remote: zmkfirmware
+      # Pinned. Every fact verified during bring-up -- flash margins, the split
+      # GATT wire format, CMakeLists compile gates, matrix-transform semantics --
+      # is a property of THIS snapshot. main moves; re-verify before bumping.
+      revision: faaf39d9f59cd2a27eca3739cdd9eb197654299b
+      import: app/west.yml
+  self:
+    path: config
