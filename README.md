@@ -230,7 +230,17 @@ therefore make you type a confirmation first.
 anything**, and follow the trial-first ladder in
 [`docs/DONGLE_SAFETY.md`](docs/DONGLE_SAFETY.md) — trial images return
 themselves to the bootloader, which is what makes a first flash survivable.
-Vendor firmware is **not** distributed here, so that backup is on you.
+
+NocFree does not publish the stock firmware, so that backup has to come from the
+device itself — and it can. Put the dongle in the bootloader and its drive holds
+`CURRENT.UF2`, a read-back of what is installed. Copy that off **before** the
+first ZMK flash and you have a retreat; afterwards the stock image is gone for
+good. [`tools/uf2_rescue.py`](tools/uf2_rescue.py) turns that read-back into a
+flashable image, and `DONGLE_SAFETY.md` explains what is inside it.
+
+> Do not share a `CURRENT.UF2` with anyone. It covers the settings partition
+> too, which holds your Bluetooth pairing keys and the addresses of devices you
+> have paired with.
 
 ## Status
 

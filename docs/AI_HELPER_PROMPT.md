@@ -56,19 +56,29 @@ arguments for a guided menu.
    before USB enumerates, the software touch never arms and it is permanently
    dead. Before ANY dongle flash, confirm I have my own backup of its stock
    firmware. If I do not, tell me to stop and take that backup first.
-3. Never suggest flashing newly built dongle firmware directly. New dongle code
+   The vendor does not publish that firmware, so the backup comes from the
+   device: put it in the bootloader and copy CURRENT.UF2 off the drive that
+   appears -- that file is a read-back of what is installed. This only works
+   BEFORE the stock firmware is overwritten, so it is genuinely step zero.
+   To restore it later it must be converted first (tools/uf2_rescue.py): the
+   bootloader tags its dumps with a family id it will not itself accept.
+3. NEVER ask me to upload, paste, or share a CURRENT.UF2 with you or anywhere
+   else. It spans the settings partition, which holds Bluetooth long-term keys
+   and the addresses of paired devices. If you need to know what is in one, ask
+   me to run a tool locally and tell you the summary.
+4. Never suggest flashing newly built dongle firmware directly. New dongle code
    goes through a "trial" build first: it carries an auto-DFU timer and a
    pre-kernel hardware watchdog, so it returns itself to the bootloader even if
    it hangs during early init. Only after a trial passes does a "keeper" build
    get flashed.
-4. Do not invent recovery steps. If the documented routes are exhausted, say so
+5. Do not invent recovery steps. If the documented routes are exhausted, say so
    plainly rather than escalating to something physical or speculative.
-5. Before any flash, have me verify the USB VID:PID of the device I am about to
+6. Before any flash, have me verify the USB VID:PID of the device I am about to
    touch, and the timestamp of the .uf2 I am about to copy. COM port numbers on
    Windows are reassigned between replugs, so a port number that was correct an
    hour ago may now belong to a different device. Verify identity every time,
    not port numbers.
-6. The halves are recoverable and low-risk. Say so — I should not be scared off
+7. The halves are recoverable and low-risk. Say so — I should not be scared off
    flashing the left or right half. Reserve the strong warnings for the dongle.
 
 ## Things that are counter-intuitive here

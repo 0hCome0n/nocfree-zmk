@@ -9,14 +9,71 @@ This file is mandatory reading before any dongle flash.
 ## Retreat image — DUMP YOUR OWN BEFORE YOU FLASH
 
 The vendor's stock dongle firmware is **not distributed here** (it's their
-copyrighted image). Before you touch the dongle, back up its stock firmware
-yourself while it's still in the vendor's bootloader, keep that `.uf2` on disk,
-and record its SHA256. That backup is your only retreat if a flash goes wrong —
-treat obtaining it as step zero. The rest of this doc assumes you have it.
+copyrighted image), and NocFree does not publish it either. So the only backup
+you will ever have is the one you take off your own device — and you must take
+it *before* you overwrite anything. Treat this as step zero.
+
+**The bootloader can dump itself.** You do not need the vendor, a programmer, or
+a debug probe. While a device sits in the UF2 bootloader, its drive holds a file
+called `CURRENT.UF2`: a read-back of what is installed right now. Copy it off and
+you have your retreat.
 
 ```powershell
-Get-FileHash your_stock_dongle_backup.uf2 -Algorithm SHA256
+# 1. put the device in the bootloader (this erases nothing)
+python tools\dfu_touch.py            # find the port; dongle is VID 2886, PID 9029
+python tools\dfu_touch.py COMxx --watch
+
+# 2. copy the read-back off the drive that appears, and hash it
+Copy-Item D:\CURRENT.UF2 .\my_stock_dongle_backup.uf2
+Get-FileHash .\my_stock_dongle_backup.uf2 -Algorithm SHA256
 ```
+
+Do this on the **stock** dongle, before its first ZMK flash. Once it is
+overwritten, the stock image is gone and no backup can be taken retroactively.
+
+### What is actually in that file
+
+Verified by dumping one and taking it apart (nRF52833, bootloader 0.9.2):
+
+| Region | Address range | What it is |
+|---|---|---|
+| SoftDevice | `0x01000`–`0x27000` | Nordic BLE stack. Untouched by an app flash |
+| Application | `0x27000`–`0x6c000` | The firmware itself |
+| Settings | `0x6c000`–`0x74000` | NVS: **Bluetooth bonds**, saved state |
+
+Two consequences, both important:
+
+> **⚠️ Never share `CURRENT.UF2`.** The settings partition holds live pairing
+> material — a real dump shows `bt/keys/<paired device address>` next to the
+> long-term keys. Posting your backup in a forum thread or a bug report hands
+> over your Bluetooth link keys and the addresses of devices you have paired
+> with. Keep it on your own disk.
+
+> **It is a read-back, not the original image, and cannot be flashed back
+> as-is.** The bootloader stamps its dumps with a different UF2 family id
+> (`0x239a0029`) than the one it accepts for writes (`0x621e937a`), so a
+> bootloader that checks will reject its own dump. `tools/uf2_rescue.py`
+> converts it: it restamps the family id, keeps the application, and drops the
+> SoftDevice (never erased, so never needs restoring) and the settings partition
+> (per-device state, and the part carrying your keys).
+
+```bash
+python tools/uf2_rescue.py my_stock_dongle_backup.uf2 restore_stock.uf2
+# then flash restore_stock.uf2 like any other image
+```
+
+### Verify the round trip before you need it
+
+The read-back path is proven: dumping a device whose firmware was known, then
+converting it, reproduced all 740 blocks of that firmware byte for byte. (The
+dump also carried one extra block — the tail of a *larger* image flashed
+earlier, since writing a UF2 never erases past what it writes.)
+
+What has **not** been verified here is writing a converted image back onto a
+device, because doing so on a dongle risks the very device that cannot be
+recovered. So prove it on a **half** first — they recover from anything — by
+dumping one, converting it, flashing the result, and confirming the keyboard
+still works. Only rely on it for the dongle after you have seen it work.
 
 ## USB identities
 
