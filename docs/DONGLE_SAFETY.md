@@ -89,9 +89,65 @@ Two consequences, both important:
 > (per-device state, and the part carrying your keys).
 
 ```bash
-python tools/uf2_rescue.py my_stock_dongle_backup.uf2 restore_stock.uf2
-# then flash restore_stock.uf2 like any other image
+python tools/uf2_rescue.py my_backup.uf2 restore.uf2
+# then flash restore.uf2 like any other image
 ```
+
+## Going back to stock
+
+If you have obtained a vendor image, restoring it is the *easy* direction —
+easier than getting here was. The vendor's files are ordinary UF2s: checked
+against real ones, they carry family id `0x621e937a` (the same one this board's
+bootloader accepts, and the same our own builds use) and load at `0x27000`, with
+no bad blocks. That means no special tooling — it is the same drag-and-drop as
+any other image here.
+
+```powershell
+# 1. from THIS firmware, enter the bootloader (a drive appears)
+python tools\dfu_touch.py COMxx --watch
+
+# 2. copy the vendor image onto that drive
+Copy-Item .\NocFree_..._Dongle.uf2 D:\
+```
+
+The flashers only know about the images bundled in `firmware/`, so a vendor
+image is a manual copy rather than `flash.ps1 dongle`. Everything else behaves
+the same: the board reboots itself when the last block lands, and the drive
+disappearing is what tells you it took.
+
+**Get the right file.** Vendor images are per device *and* per layout *and* per
+version — a real set looks like `NocFree_and_V2.3.0_Dongle.uf2`,
+`..._Left_ANSI.uf2`, `..._Right_ANSI.uf2`. Flashing a left image to a right half
+will not brick it (both recover), but it will not work either. Verify what you
+have first:
+
+```bash
+python tools/uf2check.py NocFree_and_V2.3.0_Dongle.uf2
+# expect: bad 0, family 0x621e937a, flash 0x27000 .. ...
+```
+
+### The return trip is the hard one
+
+Restoring stock closes the easy door behind you. Stock firmware writes DFU magic
+`0x4e`, so from then on the 1200-baud touch gives a **serial-only** bootloader —
+a COM port and no drive — and drag-and-drop is no longer available. Coming back
+to this firmware then needs the serial DFU route:
+
+```bash
+adafruit-nrfutil dfu genpkg --dev-type 0x0052 --sd-req 0x0123 \
+    --application zmk.hex out.zip
+adafruit-nrfutil dfu serial --package out.zip -p COMxx -b 115200 --singlebank
+```
+
+That is the path this project used for its own first flash, so it is known to
+work — but it is a different toolchain, and worth knowing about *before* you
+decide to go back rather than after.
+
+**One caveat, honestly flagged as unverified:** flashing an application does not
+erase the settings partition, so a restored stock firmware starts life with this
+project's leftover NVS still sitting at `0x6c000`. Stock most likely ignores or
+reformats it, but that has not been tested here. If a restored dongle behaves
+strangely, that leftover region is the first thing to suspect.
 
 ### Verify the round trip before you need it
 
@@ -139,9 +195,9 @@ still works. Only rely on it for the dongle after you have seen it work.
 
 | Route | When it works |
 |-------|----------------|
-| `python tools/dfu_touch.py <COM> --watch` on stock | Proven: stock uses 1200-baud; may enter **serial DFU** (magic `0x4e`) not UF2 |
-| UF2 mass-storage drive | After ZMK recovery (magic `0x57`) or if bootloader presents a drive |
-| `adafruit-nrfutil` serial DFU | When only CDC bootloader appears (stock touch path) |
+| `python tools/dfu_touch.py <COM> --watch` on stock | Works, but lands in **serial DFU** (magic `0x4e`): you get a COM port, *not* a drive. `--watch` will report no new drive, and that is the expected result on stock |
+| UF2 mass-storage drive | Only under magic `0x57` — i.e. after this project's firmware is installed. This is the drag-and-drop path, and the one a vendor image is restored through |
+| `adafruit-nrfutil` serial DFU | The write path when only a CDC bootloader appears — which is the stock case, so this is how stock → this firmware is done |
 | Replug | Sometimes restarts app; does **not** fix a wedged no-USB image |
 | Case open / pinhole | **Unavailable — do not rely on this** |
 
@@ -205,8 +261,10 @@ Gates: recovery=y, trial autodfu=y, RC clock, no XTAL, no ZMK_SPLIT, flash < 270
 
 1. Unplug dongle.  
 2. Replug. Note VID:PID.  
-3. If bootloader/UF2 → flash `your stock dongle backup`.  
-4. If stock COM (8029) → use `dfu_touch` then restore stock.  
+3. If bootloader/UF2 (a drive is mounted) → you are in the safe state. Copy a
+   known-good image onto it: this project's `firmware/nocfree_dongle_BRIDGE.uf2`,
+   or a vendor image if you have one (see "Going back to stock" above).  
+4. If stock COM (8029) → stock is already running; nothing needs recovering.  
 5. If **no USB at all after ~3 minutes** → WDT should have fired; replug again.  
 6. If still nothing → stop. Do not try more images. Document and escalate;
    physical recovery is last resort and out of policy for this project.

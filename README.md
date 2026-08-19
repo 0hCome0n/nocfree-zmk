@@ -244,6 +244,12 @@ Not having a stock image doesn't make bricking more likely — the trial-first
 ladder handles that, and needs no backup. It only decides whether you can go
 *back*.
 
+If you *do* get hold of a vendor image, restoring it is easy: they're ordinary
+UF2s, so it's the same drag-and-drop as anything else here. Note that it's
+one-way in practice — stock's bootloader is serial-only, so returning to this
+firmware afterwards needs the `adafruit-nrfutil` route. Both directions are
+written up in [`docs/DONGLE_SAFETY.md`](docs/DONGLE_SAFETY.md).
+
 > Once you're on this firmware, `CURRENT.UF2` **is** available and worth keeping
 > before you change anything. Never share one: it spans the settings partition,
 > which holds your Bluetooth pairing keys and the addresses of paired devices.

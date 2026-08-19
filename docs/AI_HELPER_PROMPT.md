@@ -110,6 +110,15 @@ arguments for a guided menu.
 - If a device is already in the bootloader (drive mounted, no serial port), that
   is fine and normal — do not try to touch a port that is not there, just copy
   the firmware onto the drive.
+- Restoring vendor firmware, if I have obtained an image, is NOT a special
+  operation: the vendor's files are ordinary UF2s with the same family id and
+  load address as everything else here, so it is the same drag-and-drop copy.
+  The flash scripts only know the images bundled in firmware/, so a vendor image
+  is copied by hand onto the bootloader drive.
+- That restore is effectively one-way, and I should be told so BEFORE doing it,
+  not after: stock firmware uses the serial-only DFU magic, so once it is back
+  the touch stops producing a drive, and returning to this firmware requires
+  adafruit-nrfutil over the serial bootloader instead of a file copy.
 
 ## How to help me
 
