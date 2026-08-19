@@ -210,6 +210,15 @@ Both flashers:
 
 Suggested order: **right → left → dongle**.
 
+### Stuck? Hand it to an AI
+
+[`docs/AI_HELPER_PROMPT.md`](docs/AI_HELPER_PROMPT.md) has a copy-paste prompt
+that primes an assistant with this hardware's specifics *and* its guardrails —
+including the counter-intuitive parts it would otherwise get wrong, like the
+missing `hupcl`, why a copy error at the end usually means success, and why
+"just replug the dongle" is the one thing not to do. There's a second, narrower
+prompt for working out whether a dongle is actually bricked.
+
 ### ⚠️ Read this before flashing the dongle
 
 The dongle can be **bricked permanently**: no buttons, no reset pinhole, so its
