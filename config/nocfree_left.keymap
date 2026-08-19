@@ -1,0 +1,172 @@
+/*
+ * CENTRAL keymap for the NocFree "&" — standard 65% QWERTY. Edit to taste
+ * (or via ZMK Studio, which is enabled on the left half).
+ *
+ * CENTRAL keymap, 96 positions: 0-47 = left half (kscan cols 0-47),
+ * 48-95 = right half (col-offset 48). The right half's own .keymap is an
+ * inert placeholder -- peripherals never evaluate bindings.
+ *
+ * PHYSICAL LAYOUT (vendor grid; '|' = the empirical half split):
+ *   r0  ESC  F1 F2 F3 F4 F5 F6 | F7 F8 F9 F10 F11 F12 PRTSC HOME
+ *   r1  GRV  1  2  3  4  5  6  | 7  8  9   0   -   =   BKSP PGUP
+ *   r2  TAB  Q  W  E  R  T     | Y  U  I   O   P   [   ]    \
+ *   r3  CAPS A  S  D  F  G     | H  J  K   L   ;   '   RET  DEL
+ *   r4  LSFT Z  X  C  V  B     | N  M  ,   .   /   RSFT UP   PGDN
+ *   r5  FN   LCT LAL LGI SPC SPC | SPC RGI FN RALT LEFT DOWN RIGHT
+ * (r5 resolved 2026-08-09: 13 keys, undumped seam column at c7. The
+ * top-right cluster is still DISPUTED vs the empirical map -- see the
+ * LEFT_WIDTH comments in the tool; verify by keycap)
+ *
+ * LAYERS: 0 = Win (DEFAULT: the user's host is Windows behind a KVM; stock
+ * defaults to macOS), 1 = Fn, 2 = Mac, 3 = Recover. Fn+M -> Mac, Fn+N -> Win
+ * (per the manual; the stock dump puts those opcodes at the M/N positions).
+ * Only the F3/F4 chords differ between OS layers, matching stock opcodes 8/9.
+ *
+ * Top row on the base layers is the vendor media row (manual):
+ *   F1/F2 display bright -/+   F3 Task View / Mission Ctrl   F4 Search / Spotlight
+ *   F5/F6 kbd backlight -/+    F7-F9 prev/play/next          F10-F12 mute/vol-/vol+
+ *
+ * RECOVERY: hold ESC (pos 0) + TAB (pos 16) from idle, then any key -> that
+ * half resets to the bootloader (locality EVENT_SOURCE). Layer 3 row 5 keeps
+ * manual transport overrides.
+ */
+
+/*
+ * Studio snippet defines ZMK_BEHAVIORS_KEEP_ALL (all behaviors in firmware).
+ * nRF52833 code partition is 276 KB and left is already ~88% without Studio;
+ * KEEP_ALL will not fit. Undef it and keep only what Studio remaps need.
+ */
+#undef ZMK_BEHAVIORS_KEEP_ALL
+#define ZMK_BEHAVIORS_KEEP_BL
+#define ZMK_BEHAVIORS_KEEP_KP
+#define ZMK_BEHAVIORS_KEEP_BT
+#define ZMK_BEHAVIORS_KEEP_OUT
+#define ZMK_BEHAVIORS_KEEP_MO
+#define ZMK_BEHAVIORS_KEEP_TO
+#define ZMK_BEHAVIORS_KEEP_TOG
+#define ZMK_BEHAVIORS_KEEP_MT
+#define ZMK_BEHAVIORS_KEEP_LT
+#define ZMK_BEHAVIORS_KEEP_SK
+#define ZMK_BEHAVIORS_KEEP_STICKY_LAYER
+#define ZMK_BEHAVIORS_KEEP_SOFT_OFF
+#define ZMK_BEHAVIORS_KEEP_NONE
+#define ZMK_BEHAVIORS_KEEP_TRANS
+#define ZMK_BEHAVIORS_KEEP_CAPS_WORD
+#define ZMK_BEHAVIORS_KEEP_KEY_REPEAT
+#define ZMK_BEHAVIORS_KEEP_KT
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+#include <dt-bindings/zmk/bt.h>
+#include <dt-bindings/zmk/outputs.h>
+#include <dt-bindings/zmk/backlight.h>
+
+/* Soft-off: hold 2s (tap is ignored). From behaviors/soft_off.dtsi as &soft_off. */
+&soft_off {
+	hold-time-ms = <2000>;
+	split-peripheral-off-on-press;
+};
+
+/ {
+	keymap {
+		compatible = "zmk,keymap";
+
+		win_layer: layer_0 {
+			display-name = "Win";
+			bindings = <
+			&kp ESC            &kp C_BRI_DEC      &kp C_BRI_INC      &kp LG(TAB)        &kp LG(S)          &bl BL_DEC         &bl BL_INC         &none	/* pos 0-7 */
+			&kp GRAVE          &kp N1             &kp N2             &kp N3             &kp N4             &kp N5             &kp N6             &none	/* pos 8-15 */
+			&kp TAB            &kp Q              &kp W              &kp E              &kp R              &kp T              &none              &none	/* pos 16-23 */
+			&kp CAPS           &kp A              &kp S              &kp D              &kp F              &kp G              &none              &none	/* pos 24-31 */
+			&kp LSHIFT         &kp Z              &kp X              &kp C              &kp V              &kp B              &none              &none	/* pos 32-39 */
+			&mo 1              &kp LCTRL          &kp LALT           &kp LGUI           &kp SPACE          &kp SPACE          &none              &none	/* pos 40-47 */
+			&kp C_PREV         &kp C_PP           &kp C_NEXT         &kp C_MUTE         &kp C_VOL_DN       &kp C_VOL_UP       &kp PRINTSCREEN    &kp HOME	/* pos 48-55 */
+			&kp N7             &kp N8             &kp N9             &kp N0             &kp MINUS          &kp EQUAL          &kp BACKSPACE      &kp PAGE_UP	/* pos 56-63 */
+			&kp Y              &kp U              &kp I              &kp O              &kp P              &kp LBKT           &kp RBKT           &kp BSLH	/* pos 64-71 */
+			&kp H              &kp J              &kp K              &kp L              &kp SEMI           &kp SQT            &kp RET            &kp DEL	/* pos 72-79 */
+			&kp N              &kp M              &kp COMMA          &kp DOT            &kp FSLH           &kp RSHIFT         &kp UP_ARROW       &kp PAGE_DOWN	/* pos 80-87 */
+			&kp SPACE          &kp RGUI           &mo 1              &kp RALT           &kp LEFT_ARROW     &kp DOWN_ARROW     &kp RIGHT_ARROW    &none	/* pos 88-95 */
+			>;
+		};
+
+		fn_layer: layer_1 {
+			display-name = "Fn";
+			bindings = <
+			&bt BT_CLR         &kp F1             &kp F2             &kp F3             &kp F4             &kp F5             &kp F6             &soft_off	/* pos 0-7: CLR / F-keys / hold soft-off 2s */
+			/* Host BT slots 1–3; profile 0 is dongle/2.4G (mode switch). */
+			&kp GRAVE          &bt BT_SEL 1       &bt BT_SEL 2       &bt BT_SEL 3       &none              &none              &none              &none	/* pos 8-15 */
+			&bl BL_TOG         &trans             &trans             &trans             &trans             &trans             &none              &none	/* pos 16-23 */
+			&trans             &trans             &trans             &trans             &trans             &trans             &none              &none	/* pos 24-31 */
+			&trans             &trans             &trans             &trans             &trans             &none              &none              &none	/* pos 32-39 */
+			&trans             &trans             &trans             &trans             &trans             &trans             &none              &none	/* pos 40-47 */
+			&kp F7             &kp F8             &kp F9             &kp F10            &kp F11            &kp F12            &trans             &studio_unlock	/* pos 48-55: Fn+Home = unlock ZMK Studio */
+			&trans             &trans             &trans             &trans             &trans             &trans             &trans             &trans	/* pos 56-63 */
+			&trans             &none              &none              &trans             &trans             &trans             &trans             &trans	/* pos 64-71 */
+			&trans             &trans             &trans             &trans             &trans             &trans             &trans             &trans	/* pos 72-79 */
+			&to 0              &to 2              &trans             &trans             &trans             &trans             &trans             &trans	/* pos 80-87 */
+			&trans             &trans             &trans             &trans             &trans             &trans             &trans             &none	/* pos 88-95 */
+			>;
+		};
+
+		mac_layer: layer_2 {
+			display-name = "Mac";
+			bindings = <
+			&kp ESC            &kp C_BRI_DEC      &kp C_BRI_INC      &kp LC(UP_ARROW)   &kp LG(SPACE)      &bl BL_DEC         &bl BL_INC         &none	/* pos 0-7 */
+			&kp GRAVE          &kp N1             &kp N2             &kp N3             &kp N4             &kp N5             &kp N6             &none	/* pos 8-15 */
+			&kp TAB            &kp Q              &kp W              &kp E              &kp R              &kp T              &none              &none	/* pos 16-23 */
+			&kp CAPS           &kp A              &kp S              &kp D              &kp F              &kp G              &none              &none	/* pos 24-31 */
+			&kp LSHIFT         &kp Z              &kp X              &kp C              &kp V              &kp B              &none              &none	/* pos 32-39 */
+			&mo 1              &kp LCTRL          &kp LALT           &kp LGUI           &kp SPACE          &kp SPACE          &none              &none	/* pos 40-47 */
+			&kp C_PREV         &kp C_PP           &kp C_NEXT         &kp C_MUTE         &kp C_VOL_DN       &kp C_VOL_UP       &kp PRINTSCREEN    &kp HOME	/* pos 48-55 */
+			&kp N7             &kp N8             &kp N9             &kp N0             &kp MINUS          &kp EQUAL          &kp BACKSPACE      &kp PAGE_UP	/* pos 56-63 */
+			&kp Y              &kp U              &kp I              &kp O              &kp P              &kp LBKT           &kp RBKT           &kp BSLH	/* pos 64-71 */
+			&kp H              &kp J              &kp K              &kp L              &kp SEMI           &kp SQT            &kp RET            &kp DEL	/* pos 72-79 */
+			&kp N              &kp M              &kp COMMA          &kp DOT            &kp FSLH           &kp RSHIFT         &kp UP_ARROW       &kp PAGE_DOWN	/* pos 80-87 */
+			&kp SPACE          &kp RGUI           &mo 1              &kp RALT           &kp LEFT_ARROW     &kp DOWN_ARROW     &kp RIGHT_ARROW    &none	/* pos 88-95 */
+			>;
+		};
+
+		recovery_layer: layer_3 {
+			display-name = "Recover";
+			bindings = <
+			&bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader	/* pos 0-7 */
+			&bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader	/* pos 8-15 */
+			&bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader	/* pos 16-23 */
+			&bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader	/* pos 24-31 */
+			&bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader	/* pos 32-39 */
+			&out OUT_USB       &out OUT_BLE       &bt BT_SEL 0       &bt BT_SEL 1       &bt BT_NXT         &bt BT_CLR         &bootloader        &bootloader	/* pos 40-47 */
+			&bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader	/* pos 48-55 */
+			&bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader	/* pos 56-63 */
+			&bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader	/* pos 64-71 */
+			&bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader	/* pos 72-79 */
+			&bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader	/* pos 80-87 */
+			&bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader        &bootloader	/* pos 88-95 */
+			>;
+		};
+
+		/* Empty slots Studio can enable without reflashing. */
+		studio_extra_0: layer_4 {
+			display-name = "Extra1";
+			status = "reserved";
+		};
+
+		studio_extra_1: layer_5 {
+			display-name = "Extra2";
+			status = "reserved";
+		};
+	};
+
+	combos {
+		compatible = "zmk,combos";
+
+		/* ESC (pos 0) + TAB (pos 16): both on the left half, and both
+		 * UNAMBIGUOUS under every position-map theory (the bottom-row Fn
+		 * position is disputed, so Fn is not used here). require-prior-idle
+		 * keeps it from firing mid-typing. */
+		recovery_combo {
+			bindings = <&mo 3>;
+			key-positions = <0 16>;
+			timeout-ms = <50>;
+			require-prior-idle-ms = <500>;
+		};
+	};
+};
