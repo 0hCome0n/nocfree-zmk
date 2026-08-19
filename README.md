@@ -263,5 +263,7 @@ development are intentionally not included in this repository.
 
 ## License
 
-Original port and bridge code are MIT ([`LICENSE`](LICENSE)). ZMK and Zephyr
-remain under their own licenses; no proprietary vendor firmware is included.
+The MIT license in [`LICENSE`](LICENSE) covers the original work in this
+repository: the ZMK board definition, the dongle-bridge firmware, and the
+tooling. It does **not** extend to ZMK or Zephyr, which remain under their own
+licenses, nor to any vendor firmware — none of which is distributed here.
