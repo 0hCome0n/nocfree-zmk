@@ -24,17 +24,60 @@ Bluetooth, and a 2.4 GHz dongle.
 > repository you accept full responsibility for the outcome. See the
 > [MIT license](LICENSE) — note in particular the "AS IS", NO-WARRANTY clause.
 
-## What works
+## Capabilities
 
-- **Three output modes**, selected by the physical slide switch:
-  - **USB** — wired HID
-  - **Bluetooth** — direct BLE to the host (multi-profile)
-  - **2.4 GHz** — via the dongle bridge (see below)
-- **Split** left/right link (left is the central, right the peripheral)
-- **ZMK Studio** on the left half (live keymap editing)
-- Backlight with left→right sync, idle-off, and session-aware deep sleep
-- Battery reporting (host shows the weaker half)
-- Soft-off, deep sleep, and a software recovery path into the UF2 bootloader
+Everything below is implemented and running as a daily driver.
+
+### Connectivity
+
+| Capability | Detail |
+|---|---|
+| Three output modes | Physical slide switch selects **USB** / **Bluetooth** / **2.4 GHz**, decoded from the stock two-GPIO encoding |
+| Vendor switch behaviour | Warm reboot on a mode change, matching stock — a live re-select leaves host links up and starves the dongle of a slot |
+| "Switch is law" | BT and 2.4 GHz never silently fall back to USB HID just because a charge cable is plugged in |
+| Bluetooth | Direct BLE HID, multi-profile, with one profile reserved for the dongle |
+| 2.4 GHz | Custom BLE-HOG → USB dongle bridge (see below) |
+| Split link | Left is the split central, right the peripheral, at the 7.5 ms BLE floor |
+| Latency tuning | Split latency 1 and a dongle-enforced 15 ms host link, so right-half keys can't be reordered behind left-half ones |
+
+### Keyboard
+
+| Capability | Detail |
+|---|---|
+| Full keymap | 96 positions across Win / Fn / Mac / Recover layers |
+| ZMK Studio | Live keymap editing on the left half over USB (Fn+Home to unlock) |
+| Media keys | Consumer HID, forwarded over the dongle as well as BT/USB |
+| Key scanning | Three PCA9555 I2C expanders, polled, on a **dedicated scan thread** so BLE traffic can never delay a scan |
+| Backlight | Left→right sync over the split link, brightness + on/off, idle-off after 5 min |
+
+### Power
+
+| Capability | Detail |
+|---|---|
+| Deep sleep | SYSTEM OFF after 30 min on battery; wake on any keypress via the expanders' shared interrupt |
+| Soft-off | Fn hold (~2 s) for a deliberate power-down |
+| Session-aware idling | The central pushes activity to the peripheral, so both halves idle and sleep together instead of the right half dropping mid-session |
+| Battery | Stock-style percentage curve; the host is shown the weaker of the two halves |
+
+### Reliability
+
+These exist because each one was a real failure that took a while to pin down:
+
+| Capability | Detail |
+|---|---|
+| Stuck-key prevention | The scan runs on its own thread, so a busy system workqueue can't make it miss a key release — and can't cascade into a BLE supervision timeout |
+| Serialized HID forwarding | The dongle's report queue is drained under a lock, so concurrent BLE/USB callbacks can't drop the final key release of a burst |
+| Advertising watchdog | ZMK restarts advertising only from BLE events; one failed start otherwise leaves the radio silently dead forever. A watchdog forces it back |
+| Bond-deadlock self-heal | A dongle restart used to deadlock pairing until a power cycle; the left now reopens the slot on its own within ~30–60 s |
+| Dongle link recovery | Verified subscriptions (no "connected but dead"), stale-connection isolation, and exponential backoff on radio resets |
+| Recovery path | 1200-baud CDC touch into the UF2 bootloader on **all three** devices — the only way back in on hardware with no buttons |
+
+### Build safety
+
+| Capability | Detail |
+|---|---|
+| Trial-first ladder | Trial images carry an auto-DFU timer **and** a pre-kernel hardware watchdog, so even a hang before init returns the device to the bootloader by itself |
+| Gated keeper builds | Keeper builds refuse to produce an image that is missing a load-bearing option, or whose local ZMK patches silently reverted |
 
 ## The dongle bridge (the interesting part)
 
@@ -112,34 +155,47 @@ entered with a **1200-baud touch** (no buttons needed).
 ./flash.sh dongle      # prompts for confirmation first
 ```
 
+Both flashers:
+
+- refuse to copy onto a UF2 drive that doesn't identify itself as a NocFree
+  board, so another UF2 device (a CircuitPython board, another keyboard) that
+  happens to be mounted can't be overwritten by mistake;
+- pick up a device that is **already** in the bootloader — the normal state
+  after a cancelled attempt or a self-returning trial image;
+- treat a copy error at the very end as success-pending-verification, because
+  the board reboots the instant the last block lands and the volume disappears
+  mid-write. Success is decided by the drive going away, not by the copy's
+  return code.
+
 > `flash.sh` was developed on Windows and is **untested on real Mac/Linux
 > hardware** — watch it on first use. If it can't find the device or the
 > volume, fall back to the fully manual method: trigger the bootloader with a
 > 1200-baud open, then copy the file onto the drive that appears.
 >
 > ```bash
-> # Linux:  stty -F /dev/ttyACM0 1200
+> # Linux:  stty -F /dev/ttyACM0 1200 hupcl
 > # macOS:  stty -f  /dev/cu.usbmodemXXXX 1200
 > cp firmware/nocfree_left.uf2 /path/to/NOCFREE_BOOT/
 > ```
+>
+> On Linux the `hupcl` matters: the reset is triggered by the DTR line
+> *dropping*, and DTR is only lowered on close when HUPCL is set. Without it
+> the command sets a baud rate and nothing else happens.
 
 Suggested order: **right → left → dongle**.
 
-> ### The dongle is opt-in and gated on purpose
-> The dongle can be **bricked permanently** — no buttons, no reset pinhole, so
-> its only recovery is the software touch. `flash.ps1 dongle` therefore makes
-> you type a confirmation first, and you should **back up your own stock dongle
-> firmware and read [`docs/DONGLE_SAFETY.md`](docs/DONGLE_SAFETY.md) before you
-> do it.** Vendor firmware is not distributed here — that backup is on you.
-
 ### ⚠️ Read this before flashing the dongle
 
-The dongle has **no buttons and no reset pinhole**. Its only recovery path is
-the software 1200-baud touch, so a firmware that hangs before USB enumerates can
-brick it permanently. **Dump and keep a backup of your dongle's stock firmware
-before you flash anything**, and follow the trial-first ladder in
-[`docs/DONGLE_SAFETY.md`](docs/DONGLE_SAFETY.md). Vendor firmware is **not**
-distributed here — you must back up your own.
+The dongle can be **bricked permanently**: no buttons, no reset pinhole, so its
+only way back is the software 1200-baud touch — and firmware that hangs before
+USB enumerates never gets to offer it. `flash.ps1 dongle` / `flash.sh dongle`
+therefore make you type a confirmation first.
+
+**Dump and keep a backup of your own dongle's stock firmware before you flash
+anything**, and follow the trial-first ladder in
+[`docs/DONGLE_SAFETY.md`](docs/DONGLE_SAFETY.md) — trial images return
+themselves to the bootloader, which is what makes a first flash survivable.
+Vendor firmware is **not** distributed here, so that backup is on you.
 
 ## Status
 

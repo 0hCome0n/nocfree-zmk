@@ -50,8 +50,18 @@ fi
 # --- find the serial device (expects exactly one plugged in) ---
 os="$(uname -s)"
 case "$os" in
-  Darwin) ports=(/dev/cu.usbmodem*) ; touch_cmd() { stty -f "$1" 1200; } ;;
-  Linux)  ports=(/dev/ttyACM*)      ; touch_cmd() { stty -F "$1" 1200; } ;;
+  Darwin)
+    ports=(/dev/cu.usbmodem*)
+    # macOS drops DTR when the last user of the port closes it.
+    touch_cmd() { stty -f "$1" 1200; }
+    ;;
+  Linux)
+    ports=(/dev/ttyACM*)
+    # `hupcl` is REQUIRED: the reset trigger is the DTR *drop*, and on Linux DTR
+    # is only lowered on close when HUPCL is set. `stty -F ... 1200` alone sets
+    # the baud rate and resets nothing, which looks exactly like a dead script.
+    touch_cmd() { stty -F "$1" 1200 hupcl; }
+    ;;
   *) echo "unsupported OS '$os' -- use the manual method in the README"; exit 1 ;;
 esac
 # Filter to entries that actually exist (globs stay literal when nothing matches).
@@ -66,8 +76,20 @@ fi
 port="${real[0]}"
 
 # --- snapshot mounts, touch, wait for the bootloader volume ---
-mount_roots() { case "$os" in Darwin) echo /Volumes/*;; Linux) echo /media/*/* /run/media/*/*;; esac; }
-before="$(mount_roots 2>/dev/null || true)"
+# NUL-separated so volume names containing spaces (common on macOS) survive.
+mount_roots() {
+  case "$os" in
+    Darwin) find /Volumes -maxdepth 1 -mindepth 1 -print0 2>/dev/null ;;
+    Linux)  find /media /run/media /mnt -maxdepth 2 -mindepth 1 -print0 2>/dev/null ;;
+  esac
+}
+# A UF2 volume identifies its board in INFO_UF2.TXT; ours says "NocFree &".
+# Checking it stops a stray copy onto another UF2 board that is also mounted --
+# that board would be broken by our firmware.
+is_nocfree_uf2() { [ -f "$1/INFO_UF2.TXT" ] && grep -qi nocfree "$1/INFO_UF2.TXT" 2>/dev/null; }
+
+before_list="$(mount_roots | tr '\0' '\n' || true)"
+was_present() { printf '%s\n' "$before_list" | grep -Fxq "$1"; }
 
 echo "$target is on $port; entering bootloader ..."
 touch_cmd "$port" || true   # the port drops as the device resets; not an error
@@ -75,18 +97,28 @@ touch_cmd "$port" || true   # the port drops as the device resets; not an error
 echo "waiting for the bootloader volume ..."
 drive=""
 for _ in $(seq 1 30); do
-  for m in $(mount_roots 2>/dev/null || true); do
-    case " $before " in *" $m "*) : ;; *)
-      [ -f "$m/INFO_UF2.TXT" ] && { drive="$m"; break; } ;;
-    esac
-  done
+  while IFS= read -r -d '' m; do
+    if was_present "$m"; then continue; fi
+    if is_nocfree_uf2 "$m"; then drive="$m"; break; fi
+  done < <(mount_roots)
   [ -n "$drive" ] && break
   sleep 0.5
 done
+if [ -z "$drive" ]; then
+  # Maybe it was already in the bootloader before we started (cancelled attempt,
+  # or a trial build that handed itself back) -- no new volume would appear.
+  while IFS= read -r -d '' m; do
+    if is_nocfree_uf2 "$m"; then drive="$m"; echo "using already-mounted bootloader volume $drive"; break; fi
+  done < <(mount_roots)
+fi
 [ -n "$drive" ] || { echo "no bootloader volume appeared. Unplug/replug and retry; firmware untouched."; exit 1; }
 
 echo "copying $uf2 -> $drive/ ..."
-cp "$fw" "$drive/" && sync
+# The board reboots the moment the last block lands, so the volume can vanish
+# mid-write and cp/sync may report an error after a perfectly good flash. The
+# check below is what decides success, so do not let set -e abort on that.
+cp "$fw" "$drive/" 2>/dev/null || echo "  (copy reported an error -- expected if the board rebooted mid-write; verifying)"
+sync 2>/dev/null || true
 sleep 5   # the board reboots itself once the UF2 lands
 if [ -f "$drive/INFO_UF2.TXT" ]; then
   echo "still in the bootloader -- the copy may not have taken. Retry."; exit 1
