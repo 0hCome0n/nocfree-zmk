@@ -2,11 +2,17 @@
 
 WHY THIS EXISTS
 ---------------
-The vendor does not distribute the stock firmware, so the only backup you can
-ever have is the one you take off your own device *before* you overwrite it.
-The Adafruit UF2 bootloader can produce that: while a device sits in the
-bootloader, its drive contains CURRENT.UF2, a read-back of what is installed.
-Copy that file somewhere safe and you have a backup nobody has to give you.
+While a device sits in the UF2 bootloader, its drive contains CURRENT.UF2, a
+read-back of what is installed. Copying that off is how you snapshot a device
+you can no longer get an image for.
+
+IMPORTANT -- THIS DOES NOT CAPTURE STOCK FIRMWARE. The stock firmware's
+1200-baud touch starts the bootloader in serial-only mode (a COM port, no
+drive), and that serial DFU protocol has no read command. The mass-storage
+drive, and therefore CURRENT.UF2, only appear once this project's firmware is
+installed -- by which point stock has already been overwritten. See
+docs/DONGLE_SAFETY.md. What this IS good for: snapshotting a working build of
+this firmware before you change it, and restoring that snapshot later.
 
 But you cannot simply copy it back. The read-back differs from a flashable
 image in two ways:
@@ -38,11 +44,11 @@ debugging, share the output, never the source.
 
 USAGE
 -----
-    python uf2_rescue.py CURRENT.UF2 restore_stock.uf2
+    python uf2_rescue.py CURRENT.UF2 restore.uf2
     python uf2_rescue.py CURRENT.UF2 restore_full.uf2 --with-softdevice
 
-Then flash restore_stock.uf2 like any other image (flash.ps1 / flash.sh copy it
-onto the bootloader drive).
+Then flash restore.uf2 like any other image (flash.ps1 / flash.sh copy it onto
+the bootloader drive).
 
 VERIFY IT FIRST
 ---------------

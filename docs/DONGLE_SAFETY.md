@@ -6,30 +6,61 @@ radio until someone opens the case (which we will not do).
 
 This file is mandatory reading before any dongle flash.
 
-## Retreat image — DUMP YOUR OWN BEFORE YOU FLASH
+## Retreat image — decide about this BEFORE you flash
 
 The vendor's stock dongle firmware is **not distributed here** (it's their
-copyrighted image), and NocFree does not publish it either. So the only backup
-you will ever have is the one you take off your own device — and you must take
-it *before* you overwrite anything. Treat this as step zero.
+copyrighted image), and NocFree does not publish it openly either. A retreat
+image is therefore something you have to arrange for yourself, and — contrary to
+what you might expect — you cannot simply read it off the device. Sort this out
+before the first flash, because afterwards there is nothing left to capture.
 
-**The bootloader can dump itself.** You do not need the vendor, a programmer, or
-a debug probe. While a device sits in the UF2 bootloader, its drive holds a file
-called `CURRENT.UF2`: a read-back of what is installed right now. Copy it off and
-you have your retreat.
+### Read this part carefully: you probably cannot dump the stock firmware
+
+It would be convenient if the bootloader could hand you a copy of what is
+installed. On this hardware, **it cannot — not while stock firmware is on it.**
+
+The stock firmware's 1200-baud touch writes DFU magic `0x4e`, which starts the
+Adafruit bootloader in **serial-only** mode: you get a COM port, and no drive.
+The mass-storage drive (the thing that carries `CURRENT.UF2`, the read-back)
+only appears under magic `0x57`, which is what *this* project's firmware writes.
+So the read-back becomes available only **after** you have already overwritten
+stock — which is exactly too late. And the serial DFU protocol on the other side
+of that COM port only writes; it has no read-back command.
+
+Practically, that leaves three options, and you should pick one deliberately
+before touching the dongle:
+
+1. **Get the vendor's image.** NocFree does not publish it openly, but their
+   firmware files do circulate (support, update packages, community). If you can
+   obtain the `.uf2` for your dongle's version, that is your retreat — verify it
+   with `tools/uf2check.py` and record its SHA256.
+2. **Read the flash over SWD.** Complete and reliable, and out of scope here: it
+   needs a debug probe and access to the pads, which for the dongle means
+   opening the case. This project does not do that.
+3. **Accept that it is one-way.** Flashing the dongle without a stock image means
+   you may not be able to restore vendor behaviour later. That can be a perfectly
+   reasonable trade — just make it knowingly, not by assuming a backup exists.
+
+> **Backup and brick are different risks.** Not having a stock image does not
+> make the dongle easier to brick; the trial-first ladder below is what protects
+> against that, and it does not depend on a backup. What a stock image buys you
+> is the ability to go *back*. Weigh them separately.
+
+### After you are on this firmware, you can snapshot it
+
+Once this project's firmware is installed, the touch gives you the UF2 drive, and
+that drive holds `CURRENT.UF2` — a read-back of what is currently flashed. That
+is worth copying before you change anything (upgrading, experimenting), and it is
+how you snapshot a half.
 
 ```powershell
-# 1. put the device in the bootloader (this erases nothing)
-python tools\dfu_touch.py            # find the port; dongle is VID 2886, PID 9029
-python tools\dfu_touch.py COMxx --watch
-
-# 2. copy the read-back off the drive that appears, and hash it
-Copy-Item D:\CURRENT.UF2 .\my_stock_dongle_backup.uf2
-Get-FileHash .\my_stock_dongle_backup.uf2 -Algorithm SHA256
+python tools\dfu_touch.py COMxx --watch      # drive appears
+Copy-Item D:\CURRENT.UF2 .\my_backup.uf2
+Get-FileHash .\my_backup.uf2 -Algorithm SHA256
 ```
 
-Do this on the **stock** dongle, before its first ZMK flash. Once it is
-overwritten, the stock image is gone and no backup can be taken retroactively.
+It is a snapshot of *this* firmware, not of stock. It does not substitute for
+option 1 above.
 
 ### What is actually in that file
 

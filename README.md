@@ -231,16 +231,24 @@ anything**, and follow the trial-first ladder in
 [`docs/DONGLE_SAFETY.md`](docs/DONGLE_SAFETY.md) — trial images return
 themselves to the bootloader, which is what makes a first flash survivable.
 
-NocFree does not publish the stock firmware, so that backup has to come from the
-device itself — and it can. Put the dongle in the bootloader and its drive holds
-`CURRENT.UF2`, a read-back of what is installed. Copy that off **before** the
-first ZMK flash and you have a retreat; afterwards the stock image is gone for
-good. [`tools/uf2_rescue.py`](tools/uf2_rescue.py) turns that read-back into a
-flashable image, and `DONGLE_SAFETY.md` explains what is inside it.
+**You most likely cannot dump the stock firmware yourself**, so read
+[`docs/DONGLE_SAFETY.md`](docs/DONGLE_SAFETY.md) before you decide. In short:
+the stock firmware's 1200-baud touch starts the bootloader in *serial-only* mode
+(a COM port, no drive), and that protocol has no read-back command. The
+mass-storage drive — and the `CURRENT.UF2` read-back on it — only appear once
+*this* firmware is installed, which is already too late to capture stock. So
+your retreat has to be a vendor image you obtain separately, an SWD dump, or a
+deliberate decision that flashing the dongle is one-way.
 
-> Do not share a `CURRENT.UF2` with anyone. It covers the settings partition
-> too, which holds your Bluetooth pairing keys and the addresses of devices you
-> have paired with.
+Not having a stock image doesn't make bricking more likely — the trial-first
+ladder handles that, and needs no backup. It only decides whether you can go
+*back*.
+
+> Once you're on this firmware, `CURRENT.UF2` **is** available and worth keeping
+> before you change anything. Never share one: it spans the settings partition,
+> which holds your Bluetooth pairing keys and the addresses of paired devices.
+> [`tools/uf2_rescue.py`](tools/uf2_rescue.py) converts a read-back back into a
+> flashable image.
 
 ## Status
 

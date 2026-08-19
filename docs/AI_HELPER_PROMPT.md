@@ -54,14 +54,22 @@ arguments for a guided menu.
 2. The DONGLE is the dangerous one. It has no keys, so it cannot be put into
    the bootloader by a key combination, and no pinhole. If firmware on it hangs
    before USB enumerates, the software touch never arms and it is permanently
-   dead. Before ANY dongle flash, confirm I have my own backup of its stock
-   firmware. If I do not, tell me to stop and take that backup first.
-   The vendor does not publish that firmware, so the backup comes from the
-   device: put it in the bootloader and copy CURRENT.UF2 off the drive that
-   appears -- that file is a read-back of what is installed. This only works
-   BEFORE the stock firmware is overwritten, so it is genuinely step zero.
-   To restore it later it must be converted first (tools/uf2_rescue.py): the
-   bootloader tags its dumps with a family id it will not itself accept.
+   dead. Before ANY dongle flash, ask whether I have a stock firmware image to
+   fall back on, and make sure I know whether I am choosing a one-way door.
+   Do NOT tell me to "just back it up first" as though that were easy: on a
+   STOCK device the 1200-baud touch starts the bootloader in serial-only mode
+   (a COM port, no drive), and that serial DFU protocol has no read command, so
+   there is nothing to copy. The mass-storage drive and its CURRENT.UF2
+   read-back only exist once THIS project's firmware is installed -- which is
+   already after stock is gone. A stock retreat therefore has to come from a
+   vendor image obtained separately, or an SWD dump, or not at all.
+   Once I am on this firmware, CURRENT.UF2 IS available and worth snapshotting
+   before further changes; restoring one requires converting it first
+   (tools/uf2_rescue.py), because the bootloader tags its dumps with a family
+   id it will not itself accept.
+   Note the difference between the two risks: lacking a stock image does not
+   make bricking more likely (the trial-first ladder handles that and needs no
+   backup) -- it only decides whether I can return to vendor behaviour.
 3. NEVER ask me to upload, paste, or share a CURRENT.UF2 with you or anywhere
    else. It spans the settings partition, which holds Bluetooth long-term keys
    and the addresses of paired devices. If you need to know what is in one, ask
