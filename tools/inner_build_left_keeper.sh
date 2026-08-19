@@ -9,6 +9,19 @@ west zephyr-export
 board=nocfree_left/nrf52833/zmk
 name=nocfree_left
 bdir="/tmp/zmk-build/$name"
+
+# Vendored-patch integrity (pre-build, fail fast): the load-bearing fixes live
+# as LOCAL patches applied to the zmk/ west tree (patches/zmk-local-patches.patch),
+# which is NOT tracked here. A `west update` or fresh checkout silently reverts
+# them, and an unknown Kconfig symbol in a defconfig is only a WARNING — so the
+# keeper would build green with the fix missing. These sentinels exist only in
+# patched sources.
+grep -q 'KSCAN_DIRECT_RESCHEDULE' /workspace/zmk/app/module/drivers/kscan/kscan_gpio_direct.c || {
+  echo "!! zmk/ kscan dedicated-workqueue patch MISSING — re-apply patches/zmk-local-patches.patch"; exit 1; }
+grep -q 'CONFIG_BOARD_NOCFREE_LEFT' /workspace/zmk/app/src/endpoints.c || {
+  echo "!! zmk/ endpoints no-USB-fallback patch MISSING (BT/2.4G would leak HID to USB)"; exit 1; }
+grep -q 'zmk_ble_force_readvertise' /workspace/zmk/app/src/ble.c || {
+  echo "!! zmk/ force-readvertise patch MISSING (adv watchdog would not link)"; exit 1; }
 echo "== building $board (out=$bdir) =="
 rm -rf "$bdir"
 mkdir -p "$bdir"
@@ -50,6 +63,10 @@ grep -q '^CONFIG_ZMK_IDLE_TIMEOUT=300000$' "$CFG" || { echo "!! idle timeout not
 if grep -q '^CONFIG_ZMK_BLE_CLEAR_BONDS_ON_START=y' "$CFG"; then
   echo "!! CLEAR_BONDS_ON_START in keeper"; exit 1
 fi
+grep -q '^CONFIG_ZMK_KSCAN_DEDICATED_WORKQUEUE=y' "$CFG" || {
+  echo "!! kscan dedicated workqueue missing (stuck-key/disconnect-cascade fix)"; exit 1; }
+grep -q '^CONFIG_NOCFREE_ACTIVITY_SYNC=y' "$CFG" || {
+  echo "!! activity sync missing (right idles/deep-sleeps mid-session without it)"; exit 1; }
 mkdir -p /workspace/releases /workspace/build_export/$name
 cp "$bdir/zephyr/zmk.uf2" "/workspace/${name}.uf2"
 cp "$bdir/zephyr/zmk.hex" "/workspace/${name}.hex"

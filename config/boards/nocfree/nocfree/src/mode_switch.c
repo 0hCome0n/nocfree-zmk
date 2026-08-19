@@ -358,6 +358,12 @@ static void adv_watchdog_handler(struct k_work *work) {
             adv_unconnected_ticks = 0;
         }
     }
+    /* Fixed 3 s cadence. A 30 s "when healthy" backoff was tried 2026-08-18 to
+     * cut workqueue contention, but it widened adv-death recovery from ~3 s to
+     * ~30 s (a real disconnect where ZMK's own readvertise also fails now waits
+     * out this sleep) and produced a complete disconnect the same day. The
+     * backoff saved only ~18 wakes/min; the backlight-poll trim (1 s -> 5 s)
+     * carries the contention win without touching recovery latency. Reverted. */
     k_work_reschedule(&adv_watchdog_work, K_SECONDS(3));
 }
 

@@ -1,9 +1,10 @@
 /*
- * BLE central HOG client — phase 3.
+ * BLE central HOG client — phase 3.
  *
- * Scan for "NocFree &" (left half; NAME REQUIRED â€” see ad_is_nocfree_keyboard),
- * connect + bond, discover HIDS input reports, subscribe (verified â€” CCC write
- * results, not queue-time optimism), forward keyboard/consumer body to USB HID.
+ * Scan for "NocFree &" (left half; NAME + HIDS UUID both required — see
+ * ad_is_nocfree_keyboard), connect + bond, discover HIDS input reports,
+ * subscribe (verified — CCC write results, not queue-time optimism), forward
+ * keyboard/consumer body to USB HID.
  *
  * Recovery machinery runs on its own work queue (never the system workqueue:
  * hard resets block, and the BT host shuts down THROUGH the sysworkq).
@@ -91,11 +92,11 @@ static void try_release_keys(void)
  *
  * STRICT 15 ms interval, not 7.5: the left's single radio also runs the
  * 7.5 ms split link to the right half. Two 7.5 ms-class schedules collide,
- * and every collision delays a right-half key past a left-half one —
+ * and every collision delays a right-half key past a left-half one —
  * observed as intermittent key reordering, worse in 2.4G than BT (Windows
  * negotiates a slacker host link than the old 7.5-15 ms request here did).
  * 15 ms guarantees a free 7.5 ms slot for the split link between every
- * host-link event. Cost: +7.5 ms uniform report latency — cannot reorder.
+ * host-link event. Cost: +7.5 ms uniform report latency — cannot reorder.
  *
  * Latency 2 lets the idle left skip 2 events (battery); worst-case resume
  * lag 3 x 15 = 45 ms, the balance accepted in the halves' tuning.
@@ -128,7 +129,11 @@ static uint8_t notify_func(struct bt_conn *conn,
 		}
 	}
 
-	if (report_id == REPORT_ID_KEYBOARD || (report_id == 0 && length >= KB_BODY_LEN)) {
+	/* Unknown id (report refs never read): only an EXACT keyboard-size body
+	 * may take the keyboard fallback — `>= KB_BODY_LEN` also matched a
+	 * 12-byte consumer report and typed its first 8 bytes as keys. */
+	if (report_id == REPORT_ID_KEYBOARD ||
+	    (report_id == 0 && (length == KB_BODY_LEN || length == KB_BODY_LEN + 1))) {
 		if (length >= KB_BODY_LEN) {
 			const uint8_t *body = data;
 			/* Some stacks prefix the Report ID in the notify payload */
@@ -163,11 +168,11 @@ static void subscribe_write_done(struct bt_conn *conn, uint8_t err,
 
 	if (err) {
 		/* VERIFIED subscribes (2026-08-14 review): the CCC write failed,
-		 * so no notifications will ever arrive on this report — do NOT
+		 * so no notifications will ever arrive on this report — do NOT
 		 * mark it subscribed (the old code did, then declared HOG ready
 		 * with dead keys and a happy watchdog). Leave subscribed=false;
 		 * the end-of-pass check in subscribe_next resets the link. */
-		printk("bridge/ble: CCC write err %u (idx %d) — NOT subscribed\n", err, sub_index);
+		printk("bridge/ble: CCC write err %u (idx %d) — NOT subscribed\n", err, sub_index);
 		if (sub_index < input_count) {
 			inputs[sub_index].subscribed = false;
 		}
@@ -220,18 +225,18 @@ static void subscribe_next(struct bt_conn *conn)
 		int err = bt_gatt_subscribe(conn, &inputs[sub_index].sub);
 
 		if (err == -EALREADY) {
-			/* Params already registered from this same session — the CCC
+			/* Params already registered from this same session — the CCC
 			 * write went through before; genuinely subscribed. */
 			inputs[sub_index].subscribed = true;
 			sub_index++;
 			continue;
 		}
 		if (err) {
-			printk("bridge/ble: subscribe err %d — NOT subscribed\n", err);
+			printk("bridge/ble: subscribe err %d — NOT subscribed\n", err);
 			sub_index++;
 			continue;
 		}
-		/* Queued only — subscribed is set by subscribe_write_done on the
+		/* Queued only — subscribed is set by subscribe_write_done on the
 		 * ACTUAL CCC write result, not here (2026-08-14 review: optimistic
 		 * marking + advance-on-error reported HOG ready with dead keys). */
 		return;
@@ -240,7 +245,7 @@ static void subscribe_next(struct bt_conn *conn)
 	/* End of pass: HOG is ready only if every required input (keyboard +
 	 * consumer) truly subscribed. Anything missing = this session is
 	 * broken (e.g. security never reached L2, so every encrypted CCC
-	 * write bounced) — reset the link for a fresh cycle instead of
+	 * write bounced) — reset the link for a fresh cycle instead of
 	 * declaring victory with dead keys. */
 	for (int i = 0; i < input_count; i++) {
 		if (inputs[i].report_type != HIDS_INPUT || inputs[i].subscribed) {
@@ -248,7 +253,7 @@ static void subscribe_next(struct bt_conn *conn)
 		}
 		if (inputs[i].report_id == REPORT_ID_KEYBOARD ||
 		    inputs[i].report_id == REPORT_ID_CONSUMER || inputs[i].report_id == 0) {
-			printk("bridge/ble: subscribe incomplete (id=%u) — reset link\n",
+			printk("bridge/ble: subscribe incomplete (id=%u) — reset link\n",
 			       inputs[i].report_id);
 			link_reset_soft("subscribe incomplete");
 			scan_start();
@@ -370,7 +375,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 					subscribe_all(conn);
 				}
 			} else {
-				/* No report ref — assume first is keyboard */
+				/* No report ref — assume first is keyboard */
 				if (input_count > 0) {
 					inputs[0].report_id = REPORT_ID_KEYBOARD;
 					inputs[0].report_type = HIDS_INPUT;
@@ -488,7 +493,10 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
 	if (err) {
 		printk("bridge/ble: connect failed %s (err %u)\n", addr, err);
-		if (default_conn) {
+		/* Same discipline as disconnected(): only OUR conn's failure may
+		 * clear state — unrefing default_conn on a foreign conn's error
+		 * would orphan the live session (the batch-B stale-conn class). */
+		if (conn == default_conn) {
 			bt_conn_unref(default_conn);
 			default_conn = NULL;
 		}
@@ -516,13 +524,13 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
 	err = bt_conn_set_security(conn, BT_SECURITY_L2);
 	if (err) {
-		/* 2026-08-14 review: "discover anyway" guaranteed a dead session —
+		/* 2026-08-14 review: "discover anyway" guaranteed a dead session —
 		 * ZMK's HOG CCCs are WRITE_ENCRYPT, so every subscribe write
 		 * bounces on an unencrypted link (and the old optimistic marking
 		 * then reported HOG ready with dead keys). Reset for a fresh
 		 * cycle instead; security setup failing here is link-level, not
 		 * something discovery can route around. */
-		printk("bridge/ble: set_security err %d — reset for fresh cycle\n", err);
+		printk("bridge/ble: set_security err %d — reset for fresh cycle\n", err);
 		drop_bond_and_retry(conn, "set_security failed");
 	}
 }
@@ -536,26 +544,26 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	printk("bridge/ble: disconnected %s reason 0x%02x\n", addr, reason);
 
 	/* 2026-08-14 review: this callback used to run its FULL cleanup for ANY
-	 * connection — including a stale one whose deferred disconnect landed
+	 * connection — including a stale one whose deferred disconnect landed
 	 * after device_found had already created a replacement. That orphaned
 	 * the live conn (unref'd our pointer to it), wiped the bond the live
 	 * session was using, and reset discovery state under it: connected-but-
 	 * dead until the ~45 s hard reset. A foreign conn's death is none of
-	 * our business — log and return. */
+	 * our business — log and return. */
 	if (default_conn != NULL && default_conn != conn) {
-		printk("bridge/ble: (stale conn — live session untouched)\n");
+		printk("bridge/ble: (stale conn — live session untouched)\n");
 		return;
 	}
 
 	try_release_keys();
 
 	/*
-	 * Drop bond on disconnect: left opens a fresh dongle-slot pair every
-	 * time it enters 2.4G (mode_switch clears profile 0 at settings-commit).
-	 * A stale bond here then fails security (KEY_REJECTED) and the bridge
-	 * looks "totally dead".
+	 * Drop ALL bonds on disconnect (NULL = every peer, which covers dst):
+	 * left opens a fresh dongle-slot pair every time it enters 2.4G
+	 * (mode_switch clears profile 0 at settings-commit). A stale bond here
+	 * then fails security (KEY_REJECTED) and the bridge looks "totally
+	 * dead".
 	 */
-	(void)bt_unpair(BT_ID_DEFAULT, dst);
 	(void)bt_unpair(BT_ID_DEFAULT, NULL);
 
 	if (default_conn == conn) {
@@ -572,7 +580,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	hog_stall_ticks = 0;
 	scanning = false;
 
-	/* Let the left re-advertise, then scan — do not thrash immediately. */
+	/* Let the left re-advertise, then scan — do not thrash immediately. */
 	reconnect_schedule();
 }
 
@@ -582,7 +590,7 @@ static void drop_bond_and_retry(struct bt_conn *conn, const char *why)
 	const bt_addr_le_t *dst = bt_conn_get_dst(conn);
 
 	bt_addr_le_to_str(dst, addr, sizeof(addr));
-	printk("bridge/ble: %s — unpair %s and disconnect\n", why, addr);
+	printk("bridge/ble: %s — unpair %s and disconnect\n", why, addr);
 	(void)bt_unpair(BT_ID_DEFAULT, dst);
 	bt_conn_disconnect(conn, BT_HCI_ERR_AUTH_FAIL);
 }
@@ -613,10 +621,10 @@ static bool le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
 	/*
 	 * The peripheral (left half) auto-requests ITS preferred params after
 	 * connect. Without this callback Zephyr accepts them unmodified and the
-	 * peripheral's values silently replace the pin — the central must
+	 * peripheral's values silently replace the pin — the central must
 	 * actually enforce what it owns. Answer every request with the pin.
 	 */
-	printk("bridge/ble: param req int %u-%u lat %u — answering with pin\n",
+	printk("bridge/ble: param req int %u-%u lat %u — answering with pin\n",
 	       param->interval_min, param->interval_max, param->latency);
 	param->interval_min = host_link_param.interval_min;
 	param->interval_max = host_link_param.interval_max;
@@ -628,7 +636,7 @@ static bool le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
 static void le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t latency,
 			     uint16_t timeout)
 {
-	/* The GRANTED values, from the controller — ground truth, not a request. */
+	/* The GRANTED values, from the controller — ground truth, not a request. */
 	printk("bridge/ble: conn params live: interval %u.%02u ms latency %u timeout %u ms\n",
 	       (interval * 125U) / 100U, (interval * 125U) % 100U, latency, timeout * 10U);
 }
@@ -725,11 +733,18 @@ static bool ad_is_nocfree_keyboard(struct net_buf_simple *ad)
 	}
 
 	/* NAME REQUIRED (2026-08-14 review): `name_ok || hids_uuid` meant any
-	 * BLE device advertising HID service 0x1812 — anyone's keyboard or
-	 * mouse in range — got connected, Just-Works-bonded, and its keystrokes
+	 * BLE device advertising HID service 0x1812 — anyone's keyboard or
+	 * mouse in range — got connected, Just-Works-bonded, and its keystrokes
 	 * forwarded to the host. The left's ZMK HOG adv always carries the
-	 * name, so the "directed adv may omit name" rationale never applied. */
-	return name_ok;
+	 * name, so the "directed adv may omit name" rationale never applied.
+	 *
+	 * HIDS UUID ALSO REQUIRED (2026-08-18 review): the left's adv carries
+	 * name AND the 0x1812 UUID16 in the SAME payload (zmk ble.c zmk_ble_ad
+	 * + BT_LE_ADV_OPT_FORCE_NAME_IN_AD), so requiring both is free and
+	 * excludes name-only spoofers plus any HIDS-less device that happens
+	 * to be called NocFree-something. (The right half is not a risk either
+	 * way: its split-peripheral adv carries no name field at all.) */
+	return name_ok && hids_uuid;
 }
 
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
@@ -754,7 +769,7 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 	char addr_str[BT_ADDR_LE_STR_LEN];
 
 	bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-	printk("bridge/ble: found %s rssi=%d — connecting\n", addr_str, rssi);
+	printk("bridge/ble: found %s rssi=%d — connecting\n", addr_str, rssi);
 
 	(void)bt_le_scan_stop();
 	scanning = false;
@@ -763,7 +778,7 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 	int err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN, &host_link_param, &conn);
 
 	if (err) {
-		printk("bridge/ble: create conn err %d — rescan\n", err);
+		printk("bridge/ble: create conn err %d — rescan\n", err);
 		/* -ENOMEM / -EAGAIN: often a half-dead conn still held by the stack */
 		if (err == -ENOMEM || err == -EAGAIN || err == -EALREADY) {
 			link_reset_soft("create failed");
@@ -797,7 +812,7 @@ static void scan_start(void)
 }
 
 /*
- * Recovery without USB replug — but do NOT thrash every few seconds.
+ * Recovery without USB replug — but do NOT thrash every few seconds.
  * Soft-resetting on every tick was wedging the controller (stop scan / unpair
  * mid-create). Policy:
  *  - While CONNECTING/CONNECTED and HOG not ready: wait, then one soft reset
@@ -815,7 +830,7 @@ static void scan_start(void)
 /*
  * DEDICATED work queue (2026-08-14 review): the reconnect machinery used to
  * run on the SYSTEM workqueue, but link_reset_hard blocks for 300 ms and
- * bt_disable aborts the BT RX thread — while the BT host's own deferred conn
+ * bt_disable aborts the BT RX thread — while the BT host's own deferred conn
  * cleanup and bt_enable init are sysworkq work items. Blocking the queue the
  * stack needs to shut down cleanly is a credible root of the replug-only
  * scanner wedge. All reconnect/reset work now runs here, where it may block
@@ -883,7 +898,7 @@ static void link_reset_hard(const char *why)
 {
 	int err;
 
-	printk("bridge/ble: HARD reset — radio off/on (%s)\n", why);
+	printk("bridge/ble: HARD reset — radio off/on (%s)\n", why);
 	link_reset_soft(why);
 	bt_stack_ready = false;
 	(void)bt_disable();
@@ -901,7 +916,7 @@ static void reconnect_work_handler(struct k_work *work)
 
 	if (!bt_stack_ready) {
 		/* PURGATORY ESCAPE (2026-08-14 review): this branch used to
-		 * reschedule SILENTLY forever — if bt_enable's ready callback
+		 * reschedule SILENTLY forever — if bt_enable's ready callback
 		 * never fired after a hard reset, the loop ticked eternally
 		 * with heartbeats alive and no scanning (the classic wedge
 		 * signature: frozen `alive ok=N`, no scan lines, replug-only
@@ -911,10 +926,10 @@ static void reconnect_work_handler(struct k_work *work)
 			int err;
 
 			stack_down_ticks = 0;
-			printk("bridge/ble: stack down 30s — re-attempting bt_enable\n");
+			printk("bridge/ble: stack down 30s — re-attempting bt_enable\n");
 			err = bt_enable(bt_ready);
 			if (err == -EALREADY) {
-				printk("bridge/ble: stack was up, flag stale — resuming\n");
+				printk("bridge/ble: stack was up, flag stale — resuming\n");
 				bt_stack_ready = true;
 				scanning = false;
 				scan_start();
@@ -944,7 +959,7 @@ static void reconnect_work_handler(struct k_work *work)
 			hard_reset_count = 0;
 			ticks_since_hard = 0;
 		} else if (++hog_stall_ticks >= HOG_STALL_TICKS) {
-			printk("bridge/ble: HOG stall — soft reset once\n");
+			printk("bridge/ble: HOG stall — soft reset once\n");
 			hog_stall_ticks = 0;
 			link_reset_soft("HOG stall");
 			scan_start();
@@ -955,7 +970,7 @@ static void reconnect_work_handler(struct k_work *work)
 
 	/* Idle (not connected): keep scan alive; escalate only if stuck long.
 	 * BACKOFF (2026-08-14 review): the flat 45 s hard-reset cadence ran
-	 * ~600 bt_disable/enable cycles against a sleeping left every night —
+	 * ~600 bt_disable/enable cycles against a sleeping left every night —
 	 * each one a fresh roll of the wedge dice. Escalation now doubles the
 	 * hard-reset spacing each time (45 s..12 min cap) and drops the soft
 	 * resets once a hard reset has proven useless; a healthy reconnect
@@ -984,7 +999,7 @@ static void reconnect_work_handler(struct k_work *work)
 
 	/* Normal tick: only restart scan if it is not already running. */
 	if (!scanning) {
-		printk("bridge/ble: scan not running — start (#%u)\n", reconnect_attempts);
+		printk("bridge/ble: scan not running — start (#%u)\n", reconnect_attempts);
 		scan_start();
 	}
 	reconnect_schedule();
@@ -1021,7 +1036,7 @@ static void bt_ready(int err)
 int bridge_ble_init(void)
 {
 	/* Reconnect/reset machinery gets its own queue BEFORE anything can
-	 * schedule onto it â€” see the comment at reconnect_wq. Priority below
+	 * schedule onto it — see the comment at reconnect_wq. Priority below
 	 * BT RX/TX threads; blocking here must never starve the stack. */
 	k_work_queue_start(&reconnect_wq, reconnect_wq_stack,
 			   K_THREAD_STACK_SIZEOF(reconnect_wq_stack), K_PRIO_PREEMPT(12), NULL);

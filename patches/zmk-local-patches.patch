@@ -29,6 +29,122 @@ index 92b2107..431c593 100644
  int zmk_ble_set_device_name(char *name);
  
  #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+diff --git a/app/module/drivers/kscan/Kconfig b/app/module/drivers/kscan/Kconfig
+index 5ec0006..bc9cbf4 100644
+--- a/app/module/drivers/kscan/Kconfig
++++ b/app/module/drivers/kscan/Kconfig
+@@ -108,6 +108,33 @@ config ZMK_KSCAN_MATRIX_POLLING
+ config ZMK_KSCAN_DIRECT_POLLING
+     bool "Poll for key event triggers instead of using interrupts on direct wired boards."
+ 
++config ZMK_KSCAN_DEDICATED_WORKQUEUE
++    bool "Run the direct kscan on its own thread instead of the system workqueue."
++    help
++        For boards where a scan is slow (e.g. keys behind I2C expanders), running
++        the scan on the shared system workqueue lets BLE/backlight work queue in
++        front of it; when that backs up the scan slips its deadline and a key
++        release is lost (stuck key), and a bad backlog can starve BLE into a
++        disconnect. A dedicated thread cannot be blocked by that backlog.
++
++config ZMK_KSCAN_DEDICATED_WORKQUEUE_STACK_SIZE
++    int "Stack size (bytes) for the dedicated kscan workqueue thread."
++    default 1536
++    depends on ZMK_KSCAN_DEDICATED_WORKQUEUE
++    help
++        Must cover the scan handler plus the input GPIO driver it calls into
++        (for I2C expanders, the I2C transfer path). 1536 is comfortable.
++
++config ZMK_KSCAN_DEDICATED_WORKQUEUE_PRIORITY
++    int "Thread priority for the dedicated kscan workqueue."
++    default -2
++    depends on ZMK_KSCAN_DEDICATED_WORKQUEUE
++    help
++        Should sit one step above the system workqueue (default -1) so a busy
++        system workqueue cannot delay a scan, and WELL below the BLE controller.
++        Note the radio link layer is ISR-driven, so no thread priority can
++        disrupt it; this only orders the scan against other threads.
++
+ config ZMK_KSCAN_DEBOUNCE_PRESS_MS
+     int "Debounce time for key press in milliseconds."
+     default -1
+diff --git a/app/module/drivers/kscan/kscan_gpio_direct.c b/app/module/drivers/kscan/kscan_gpio_direct.c
+index 45fc863..07da6ce 100644
+--- a/app/module/drivers/kscan/kscan_gpio_direct.c
++++ b/app/module/drivers/kscan/kscan_gpio_direct.c
+@@ -19,6 +19,38 @@
+ 
+ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+ 
++#if IS_ENABLED(CONFIG_ZMK_KSCAN_DEDICATED_WORKQUEUE)
++/* NocFree patch: run the scan on its OWN thread, not the shared system
++ * workqueue. On boards with a slow scan (e.g. keys behind I2C expanders) the
++ * scan work otherwise queues FIFO behind BLE/backlight work; when that backs
++ * up, the scan slips its absolute deadline and a key release is lost (stuck
++ * key), and a severe backlog can starve BLE into a supervision timeout (the
++ * stuck-key-then-disconnect cascade). A private thread one priority above the
++ * system workqueue (-1) cannot be blocked by that backlog. The radio link
++ * layer is ISR-driven (IRQ prio 0/1) so it is unaffected by any thread
++ * priority; the scan also yields during its own I2C reads, so it never
++ * monopolises the CPU. */
++K_THREAD_STACK_DEFINE(kscan_direct_wq_stack, CONFIG_ZMK_KSCAN_DEDICATED_WORKQUEUE_STACK_SIZE);
++static struct k_work_q kscan_direct_wq;
++static bool kscan_direct_wq_started;
++
++static void kscan_direct_wq_ensure_started(void) {
++    if (!kscan_direct_wq_started) {
++        kscan_direct_wq_started = true;
++        k_work_queue_start(&kscan_direct_wq, kscan_direct_wq_stack,
++                           K_THREAD_STACK_SIZEOF(kscan_direct_wq_stack),
++                           CONFIG_ZMK_KSCAN_DEDICATED_WORKQUEUE_PRIORITY, NULL);
++        k_thread_name_set(&kscan_direct_wq.thread, "kscan");
++    }
++}
++
++#define KSCAN_DIRECT_RESCHEDULE(dwork, delay)                                                      \
++    k_work_reschedule_for_queue(&kscan_direct_wq, dwork, delay)
++#else
++static inline void kscan_direct_wq_ensure_started(void) {}
++#define KSCAN_DIRECT_RESCHEDULE(dwork, delay) k_work_reschedule(dwork, delay)
++#endif
++
+ #define DT_DRV_COMPAT zmk_kscan_gpio_direct
+ 
+ #if CONFIG_ZMK_KSCAN_DEBOUNCE_PRESS_MS >= 0
+@@ -120,7 +152,7 @@ static void kscan_direct_irq_callback_handler(const struct device *port, struct
+ 
+     data->scan_time = k_uptime_get();
+ 
+-    k_work_reschedule(&data->work, K_NO_WAIT);
++    KSCAN_DIRECT_RESCHEDULE(&data->work, K_NO_WAIT);
+ }
+ #endif
+ 
+@@ -155,7 +187,7 @@ static void kscan_direct_read_continue(const struct device *dev) {
+ 
+     data->scan_time += config->debounce_scan_period_ms;
+ 
+-    k_work_reschedule(&data->work, K_TIMEOUT_ABS_MS(data->scan_time));
++    KSCAN_DIRECT_RESCHEDULE(&data->work, K_TIMEOUT_ABS_MS(data->scan_time));
+ }
+ 
+ static void kscan_direct_read_end(const struct device *dev) {
+@@ -169,7 +201,7 @@ static void kscan_direct_read_end(const struct device *dev) {
+     data->scan_time += config->poll_period_ms;
+ 
+     // Return to polling slowly.
+-    k_work_reschedule(&data->work, K_TIMEOUT_ABS_MS(data->scan_time));
++    KSCAN_DIRECT_RESCHEDULE(&data->work, K_TIMEOUT_ABS_MS(data->scan_time));
+ #endif
+ }
+ 
+@@ -335,6 +367,7 @@ static int kscan_direct_init(const struct device *dev) {
+     // Sort inputs by port so we can read each port just once per scan.
+     kscan_gpio_list_sort_by_port(&data->inputs);
+ 
++    kscan_direct_wq_ensure_started();
+     k_work_init_delayable(&data->work, kscan_direct_work_handler);
+ 
+ #if IS_ENABLED(CONFIG_PM_DEVICE)
 diff --git a/app/module/drivers/sensor/battery/battery_voltage_divider.c b/app/module/drivers/sensor/battery/battery_voltage_divider.c
 index 62a02e9..11272ef 100644
 --- a/app/module/drivers/sensor/battery/battery_voltage_divider.c

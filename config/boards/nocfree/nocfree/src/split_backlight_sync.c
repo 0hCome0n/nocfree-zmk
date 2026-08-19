@@ -148,8 +148,8 @@ out:
  * a disconnected peripheral return 0 and vanish in the async transport, so
  * the poll happily latched state the right half never received — brightness
  * and on/off drifted across every disconnect/reconnect (deep-sleep wake, link
- * blip). Any peripheral status change marks the state dirty; the next 1 s
- * poll tick re-pushes to everyone. Cheap, and correct for multi-peripheral. */
+ * blip). Any peripheral status change marks the state dirty; the next poll
+ * tick re-pushes to everyone. Cheap, and correct for multi-peripheral. */
 static int sync_peripheral_status_listener(const zmk_event_t *eh) {
     ARG_UNUSED(eh);
     have_last = false;

@@ -36,7 +36,6 @@ struct hid_q_item {
 };
 
 static const struct device *hid_dev;
-static atomic_t hid_ready;
 
 static struct hid_q_item hid_q[HID_Q_DEPTH];
 static uint8_t hid_q_head; /* next write */
@@ -138,6 +137,21 @@ static void hid_queue_pop(void)
 	k_spin_unlock(&hid_q_lock, key);
 }
 
+/*
+ * Serialize the peek→write→pop cycle (2026-08-18 review). This function runs
+ * from THREE thread contexts: BT RX (notify_func → send_*), the USB stack
+ * thread (int_in_ready_cb) and the reconnect queue (release_all). The queue
+ * spinlock makes each queue op atomic but not the SEQUENCE: two concurrent
+ * drainers could peek the same item — duplicate send — and then both pop,
+ * discarding a never-sent report behind it. HID reports are absolute state,
+ * so a discarded report self-corrects on the next key event — but if it was
+ * the final release of a burst, the host holds that key until the user types
+ * again. K_NO_WAIT (never block the BT RX thread) + the post-unlock re-check:
+ * a push that loses the lock race returns immediately, and the holder's
+ * re-check picks the item up, so nothing is stranded until the next event.
+ */
+static K_MUTEX_DEFINE(hid_drain_lock);
+
 static void hid_try_drain(void)
 {
 	struct hid_q_item item;
@@ -148,29 +162,41 @@ static void hid_try_drain(void)
 		return;
 	}
 
-	while (hid_queue_peek_copy(&item) == 0) {
-		buf[0] = item.kind;
-		memcpy(&buf[1], item.body, item.len);
-		err = hid_int_ep_write(hid_dev, buf, (uint16_t)(1U + item.len), NULL);
-		if (err == -EAGAIN) {
-			/* Endpoint busy; int_in_ready will call us again. */
+	while (true) {
+		if (k_mutex_lock(&hid_drain_lock, K_NO_WAIT) != 0) {
+			/* Someone is draining; their re-check covers our push. */
 			return;
 		}
-		if (err) {
-			printk("bridge/usb: hid write err %d (id=%u)\n", err, item.kind);
-			/* Drop this report so we do not stall forever. */
+		while (hid_queue_peek_copy(&item) == 0) {
+			buf[0] = item.kind;
+			memcpy(&buf[1], item.body, item.len);
+			err = hid_int_ep_write(hid_dev, buf, (uint16_t)(1U + item.len), NULL);
+			if (err == -EAGAIN) {
+				/* Endpoint busy; int_in_ready will call us again. */
+				k_mutex_unlock(&hid_drain_lock);
+				return;
+			}
+			if (err) {
+				printk("bridge/usb: hid write err %d (id=%u)\n", err, item.kind);
+				/* Drop this report so we do not stall forever. */
+				hid_queue_pop();
+				continue;
+			}
 			hid_queue_pop();
-			continue;
+			atomic_inc(&hid_tx_ok);
 		}
-		hid_queue_pop();
-		atomic_inc(&hid_tx_ok);
+		k_mutex_unlock(&hid_drain_lock);
+		/* Re-check: a push between our last peek and the unlock lost the
+		 * lock race and returned — drain again rather than strand it. */
+		if (hid_queue_peek_copy(&item) != 0) {
+			return;
+		}
 	}
 }
 
 static void int_in_ready_cb(const struct device *dev)
 {
 	ARG_UNUSED(dev);
-	atomic_set(&hid_ready, 1);
 	hid_try_drain();
 }
 
@@ -194,7 +220,6 @@ int bridge_usb_hid_init(void)
 		return err;
 	}
 
-	atomic_set(&hid_ready, 1);
 	printk("bridge/usb: HID kb+consumer registered (ID1/ID2, q=%u)\n", HID_Q_DEPTH);
 	return 0;
 }

@@ -88,6 +88,11 @@ CONFIG_RETENTION=y
 CONFIG_RETENTION_BOOT_MODE=y
 
 CONFIG_ZMK_KSCAN_DIRECT_POLLING=y
+# Run the (slow, I2C-expander) scan on its OWN thread at priority -2, not the
+# system workqueue — so BLE/backlight backlog can't delay a scan (stuck keys)
+# or, when severe, starve BLE into a disconnect (the stuck-then-drop cascade).
+# 2026-08-18.
+CONFIG_ZMK_KSCAN_DEDICATED_WORKQUEUE=y
 # Deep sleep: SYSTEM OFF after 30 min idle on battery (skipped while USB powered).
 # Wake: PCA9555 INT (P0.31). Soft-off (Fn hold) remains for intentional off.
 # If wireless dies after sleep, power-cycle / re-pair once; INT clear is armed

@@ -84,6 +84,9 @@ CONFIG_RETENTION_BOOT_MODE=y
 # INT pin we cannot give it -- all three share P0.31). Without polling the call
 # returns -ENOSYS and kscan NEVER STARTS: the board boots with dead keys.
 CONFIG_ZMK_KSCAN_DIRECT_POLLING=y
+# Dedicated kscan thread (priority -2), off the system workqueue — see the left
+# defconfig. Both halves scan behind I2C expanders. 2026-08-18.
+CONFIG_ZMK_KSCAN_DEDICATED_WORKQUEUE=y
 
 # Deep sleep: 30 min on battery (was 15); wake via expander INT (P0.05).
 # Battery switch is hard recovery if INT wake fails.

@@ -8,6 +8,16 @@ west zephyr-export
 board=nocfree_right/nrf52833/zmk
 name=nocfree_right
 bdir="/tmp/zmk-build/$name"
+
+# Vendored-patch integrity (pre-build, fail fast): see the left keeper script.
+# A `west update` silently reverts the zmk/ local patches; an unknown defconfig
+# symbol is only a warning, so the keeper would build green without the fix.
+grep -q 'KSCAN_DIRECT_RESCHEDULE' /workspace/zmk/app/module/drivers/kscan/kscan_gpio_direct.c || {
+  echo "!! zmk/ kscan dedicated-workqueue patch MISSING — re-apply patches/zmk-local-patches.patch"; exit 1; }
+grep -q 'zmk_activity_note' /workspace/zmk/app/src/split/peripheral.c || {
+  echo "!! zmk/ activity-sync peripheral patch MISSING (right would idle/deep-sleep mid-session)"; exit 1; }
+grep -q 'ZMK_SPLIT_ROLE_PERIPHERAL' /workspace/zmk/app/src/backlight.c || {
+  echo "!! zmk/ backlight peripheral-persistence patch MISSING (dark-boot-after-sleep returns)"; exit 1; }
 echo "== building $board (out=$bdir) =="
 rm -rf "$bdir"
 mkdir -p "$bdir"
@@ -32,6 +42,8 @@ grep -q '^CONFIG_ZMK_IDLE_TIMEOUT=300000$' "$CFG" || { echo "!! idle timeout not
 if grep -q '^CONFIG_ZMK_BLE_CLEAR_BONDS_ON_START=y' "$CFG"; then
   echo "!! CLEAR_BONDS_ON_START in keeper"; exit 1
 fi
+grep -q '^CONFIG_ZMK_KSCAN_DEDICATED_WORKQUEUE=y' "$CFG" || {
+  echo "!! kscan dedicated workqueue missing (stuck-key/disconnect-cascade fix)"; exit 1; }
 # bcklight must survive omit-if-no-ref (BLFIX root cause).
 if ! grep -q 'bcklight' "$bdir/zephyr/zephyr.dts" 2>/dev/null; then
   # fallback: strings in uf2 after build — check dts first

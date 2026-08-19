@@ -179,8 +179,14 @@ config NOCFREE_BACKLIGHT_SYNC
 
 config NOCFREE_BACKLIGHT_SYNC_POLL_MS
 	int "Backlight sync poll interval, milliseconds"
-	default 1000
+	default 5000
 	depends on NOCFREE_BACKLIGHT_SYNC
+	help
+	  Was 1000 (2026-08-17): a 1 s poll is 60 system-workqueue wakes/min
+	  competing with the I2C kscan (the stuck-key mechanism). Backlight state
+	  changes are user-initiated and rare, so a ~5 s sync latency is invisible
+	  while cutting that load 5x. The activity nudge cadence is relative
+	  (ACTIVITY_SYNC_PERIOD_MS / this), so it stays ~10 s automatically.
 
 config NOCFREE_ACTIVITY_SYNC
 	bool "Push session activity to the peripheral (central only)"
