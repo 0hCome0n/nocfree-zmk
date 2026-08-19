@@ -139,20 +139,46 @@ Prebuilt keeper firmware is in [`firmware/`](firmware/) — you don't have to
 build anything to flash. All devices use the Adafruit nRF52 UF2 bootloader,
 entered with a **1200-baud touch** (no buttons needed).
 
-**Windows — `flash.ps1` (no Python, no installs; just stock PowerShell):**
+**Just run it with no arguments** and it walks you through the whole thing —
+it shows which of your devices it can see, asks what to flash, and does them in
+the right order. Nothing happens until you pick something, and `Q` quits.
 
 ```powershell
-.\flash.ps1 left       # finds the device, enters bootloader, copies firmware
-.\flash.ps1 right
-.\flash.ps1 dongle     # prompts for confirmation first -- see the warning below
+.\flash.ps1            # Windows -- stock PowerShell, no Python, no installs
 ```
 
-**macOS / Linux — `flash.sh` (no Python; plug in only the target device):**
+```bash
+./flash.sh             # macOS / Linux
+```
+
+```
+  NocFree & -- ZMK firmware flasher
+  ---------------------------------
+
+  Connected devices
+    Right half  running   (COM33)
+    Left half   running   (COM35)
+    Dongle      running   (COM31)
+
+  What would you like to flash?
+    1) Both halves      (right, then left -- the recommended order)
+    2) Right half only
+    3) Left half only
+    4) Dongle           (brick risk -- read docs\DONGLE_SAFETY.md first)
+    R) Re-scan devices
+    Q) Quit             (nothing has been touched)
+```
+
+You can also name a target directly and skip the menu:
+
+```powershell
+.\flash.ps1 left
+.\flash.ps1 right
+.\flash.ps1 dongle     # requires typing a confirmation -- see the warning below
+```
 
 ```bash
-./flash.sh left
-./flash.sh right
-./flash.sh dongle      # prompts for confirmation first
+./flash.sh left        # on macOS/Linux, plug in only the device being flashed
 ```
 
 Both flashers:
