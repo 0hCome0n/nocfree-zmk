@@ -61,6 +61,7 @@
 #include <dt-bindings/zmk/bt.h>
 #include <dt-bindings/zmk/keys.h>
 #include <dt-bindings/zmk/outputs.h>
+#include <dt-bindings/zmk/pointing.h>
 
 /* Soft-off: hold 2s (tap is ignored). From behaviors/soft_off.dtsi as &soft_off. */
 
@@ -88,9 +89,9 @@
         };
 
         mac_layer: layer_2 {
-            display-name = "Mac";
+            display-name = "Mouse and Numbers";
             bindings = <
-&kp ESC  &kp C_BRI_DEC  &kp C_BRI_INC  &kp LC(UP_ARROW)  &kp LG(SPACE)  &bl BL_DEC  &bl BL_INC  &none  &kp GRAVE  &kp N1  &kp N2  &kp N3  &kp N4  &kp N5  &kp N6  &none  &kp TAB  &kp Q  &kp W  &kp E  &kp R  &kp T  &none  &none  &kp CAPS  &kp A  &kp S  &kp D  &kp F  &kp G  &none  &none  &kp LSHIFT  &kp Z  &kp X  &kp C  &kp V  &kp B  &none  &none  &mo 1  &kp LCTRL  &kp LALT  &kp LGUI  &kp SPACE  &kp SPACE  &none  &none  &kp C_PREV  &kp C_PP  &kp C_NEXT  &kp C_MUTE  &kp C_VOL_DN  &kp C_VOL_UP  &kp PRINTSCREEN  &kp HOME  &kp N7  &kp N8  &kp N9  &kp N0  &kp MINUS  &kp EQUAL  &kp BACKSPACE  &kp PAGE_UP  &kp Y  &kp U  &kp I  &kp O  &kp P  &kp LBKT  &kp RBKT  &kp BSLH  &kp H  &kp J  &kp K  &kp L  &kp SEMI  &kp SQT  &kp RET  &kp DEL  &kp N  &kp M  &kp COMMA  &kp DOT  &kp FSLH  &kp RSHIFT  &kp UP_ARROW  &kp PAGE_DOWN  &kp SPACE  &kp RGUI  &mo 1  &kp RALT  &kp LEFT_ARROW  &kp DOWN_ARROW  &kp RIGHT_ARROW  &none
+&kp ESC  &kp C_BRI_DEC  &kp C_BRI_INC  &kp LC(UP_ARROW)  &kp LG(SPACE)  &bl BL_DEC  &bl BL_INC  &none  &kp GRAVE  &kp N1  &kp N2  &kp N3  &kp N4  &kp N5  &kp N6  &none  &kp TAB  &kp Q  &mkp MCLK  &mmv MOVE_UP  &mkp RCLK  &msc SCRL_UP  &none  &none  &kp CAPS  &mkp LCLK  &mmv MOVE_LEFT  &mmv MOVE_DOWN  &mmv MOVE_RIGHT  &msc SCRL_DOWN  &none  &none  &kp LSHIFT  &kp Z  &kp X  &kp C  &kp V  &kp B  &none  &none  &mo 1  &kp LCTRL  &kp LALT  &kp LGUI  &kp SPACE  &none  &none  &none  &kp C_PREV  &kp C_PP  &kp C_NEXT  &kp C_MUTE  &kp C_VOL_DN  &kp C_VOL_UP  &kp PRINTSCREEN  &kp HOME  &kp N7  &kp N8  &kp N9  &kp N0  &kp MINUS  &kp EQUAL  &kp BACKSPACE  &kp PAGE_UP  &kp Y  &kp U  &kp I  &kp O  &kp P  &kp LBKT  &kp RBKT  &kp BSLH  &kp H  &kp J  &kp K  &kp L  &kp SEMI  &kp SQT  &kp RET  &kp DEL  &kp N  &kp M  &kp COMMA  &kp DOT  &kp FSLH  &kp RSHIFT  &kp UP_ARROW  &kp PAGE_DOWN  &kp SPACE  &kp RGUI  &mo 1  &kp RALT  &kp LEFT_ARROW  &kp DOWN_ARROW  &kp RIGHT_ARROW  &none
             >;
         };
 
