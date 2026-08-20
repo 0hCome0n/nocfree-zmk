@@ -5,6 +5,13 @@ A [ZMK](https://zmk.dev) firmware port for the **NocFree &** split keyboard
 board keeps all three of its output modes under ZMK: wired USB, direct
 Bluetooth, and a 2.4 GHz dongle.
 
+> **This is the ANSI layout only.** The keymap was recovered from an ANSI
+> unit's own stock firmware and covers that key set. NocFree also ship **ISO,
+> JP and KR** variants — those have different key counts and positions, and KR
+> adds a fourth I²C expander at `0x21` for an extra row, which this port does
+> not read at all. On a non-ANSI board, expect keys in the wrong place or dead.
+> The numpad accessory is not supported either.
+
 > ## ⚠️ Use entirely at your own risk
 >
 > This is a personal hobby project shared as-is. **I provide no warranty, no
@@ -44,7 +51,8 @@ Everything below is implemented and running as a daily driver.
 
 | Capability | Detail |
 |---|---|
-| Full keymap | 96 positions across Win / Fn / Mac / Recover layers |
+| Full keymap | 96 matrix positions across Win / Fn / Mac / Recover layers, **ANSI only** — decoded from the stock firmware's own keymap, so key-for-key it matches what the board shipped with |
+| Function keys | The top row is the vendor's media row by default (brightness, backlight, transport, volume), exactly as stock: **`Fn` + top row gives F1–F12.** The keycaps are labelled F1–F12, but stock sends media unless `Fn` is held, and this port keeps that behaviour |
 | ZMK Studio | Live keymap editing on the left half over USB (Fn+Home to unlock) |
 | Media keys | Consumer HID, forwarded over the dongle as well as BT/USB |
 | Key scanning | Three PCA9555 I2C expanders, polled, on a **dedicated scan thread** so BLE traffic can never delay a scan |
