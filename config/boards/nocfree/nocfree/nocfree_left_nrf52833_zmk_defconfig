@@ -125,6 +125,28 @@ CONFIG_BT_PERIPHERAL_PREF_LATENCY=2
 CONFIG_ZMK_SPLIT_BLE_PREF_LATENCY=1
 CONFIG_ZMK_KSCAN_EVENT_QUEUE_SIZE=32
 
+# --- Split-link drop hardening -------------------------------------------------
+# Credit: the community port at github.com/NocFreeKB/NocFree-and-zmk identified
+# this; verified independently here before adopting.
+#
+# ZMK's split peripheral (app/src/split/bluetooth/service.c) dequeues the other
+# half's complete position bitmap from its msgq BEFORE calling bt_gatt_notify(),
+# and on failure only LOG_DBGs it — which is compiled out entirely in a build
+# with CONFIG_LOG off. Submission fails when un-acked packets fill the TX pool
+# on a fading link, so the key state is silently lost; if it carried a RELEASE,
+# that key stays held at the host until the next event from that half.
+#
+# Deeper pools keep submissions succeeding across a longer fade. RAM only, no
+# flash cost — which matters here, because the left partition is nearly full.
+# Not a correctness fix: see the drop counter in patches/zmk-local-patches.patch,
+# which makes the remaining drops visible instead of silent.
+CONFIG_BT_BUF_ACL_TX_COUNT=8
+CONFIG_BT_L2CAP_TX_BUF_COUNT=8
+# Central-side queue of per-position events from the peripheral. It also absorbs
+# the release-everything burst raised when a peripheral disconnects; at the
+# default 5, anything past that is dropped — a stuck key by another route.
+CONFIG_ZMK_SPLIT_BLE_CENTRAL_POSITION_QUEUE_SIZE=16
+
 # Stock reboots on every mode-switch change (BT↔2.4G↔USB). Live re-select
 # alone leaves Windows host links up (RPA vs identity), so the dongle never
 # gets a free peripheral slot after leaving Bluetooth. Warm reboot matches

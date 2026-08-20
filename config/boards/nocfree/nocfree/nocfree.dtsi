@@ -284,27 +284,44 @@
 	 *     percent = clamp( ((mV * 1/33) - 70) * 10 / 3, 0, 100 )
 	 * so 0% at 2310 mV and 100% at 3300 mV measured at the ADC pin.
 	 *
-	 * INFERRED (verify before trusting): for a 3.0-4.2 V cell that implies a
-	 * divider ratio of ~0.77-0.79, and 270k (top) / 1M (output) gives 0.7874 --
-	 * the only clean E24 pair in range. Values below assume that.
+	 * RATIO: the vendor's porting notes state the factory firmware scales the
+	 * measured pin voltage by 130/100 to reach battery voltage -- a divider
+	 * ratio of 100/130 = 0.7692. An earlier inferred 1M/1.27M (0.7874) was
+	 * ~2.4% off; the vendor figure is used below.
 	 *
-	 * If battery percentage reads wrong, it is cosmetic; set
-	 * CONFIG_ZMK_BATTERY_REPORTING=n until the resistors are confirmed.
+	 * This only affects the reported VOLTAGE. Battery PERCENTAGE does not go
+	 * through it: NOCFREE_BATTERY_STOCK_CURVE applies the stock transfer
+	 * function to the raw pin millivolts.
 	 */
 	vbatt: vbatt {
 		compatible = "zmk,battery-voltage-divider";
 		io-channels = <&adc 2>;           /* AIN2 = P0.04 */
-		output-ohms = <1000000>;          /* INFERRED from the 2310-3300 mV span */
-		full-ohms = <(1000000 + 270000)>; /* INFERRED, ratio 0.7874 */
+		output-ohms = <100>;              /* vendor: pin -> battery is x130/100 */
+		full-ohms = <130>;                /* ratio 0.7692 */
 		power-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;  /* P0.05 */
 	};
 
-	/* Status LED is P0.09 (not P0.04). */
+	/*
+	 * LEDs, per the vendor's porting notes.
+	 *
+	 * P0.09 is NOT a general status LED: it is the RED charge / low-battery
+	 * indicator, shared with charge status, and the factory firmware emulates
+	 * open-drain on it and RELEASES the pin while USB-powered. Driving it
+	 * push-pull while the charger also drives it is output contention, so it
+	 * is defined here and deliberately left alone.
+	 *
+	 * P0.10 is the BLUE status LED, plain GPIO, active low. Left half only --
+	 * the vendor's right-half pin table has no equivalent.
+	 */
 	leds {
 		compatible = "gpio-leds";
-		status_led: led_0 {
+		charge_led: led_0 {
 			gpios = <&gpio0 9 GPIO_ACTIVE_HIGH>;
-			label = "Status LED";
+			label = "Red charge/low-battery indicator";
+		};
+		status_led: led_1 {
+			gpios = <&gpio0 10 GPIO_ACTIVE_LOW>;
+			label = "Blue status LED";
 		};
 	};
 

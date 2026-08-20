@@ -30,10 +30,28 @@ of that COM port only writes; it has no read-back command.
 Practically, that leaves three options, and you should pick one deliberately
 before touching the dongle:
 
-1. **Get the vendor's image.** NocFree does not publish it openly, but their
-   firmware files do circulate (support, update packages, community). If you can
-   obtain the `.uf2` for your dongle's version, that is your retreat — verify it
-   with `tools/uf2check.py` and record its SHA256.
+1. **Get the vendor's image — this is the practical route.** NocFree does not
+   publish firmware from a download page, but they distribute it as a
+   "Firmware Care" recovery package, and that package is a plain zip with a
+   `uf2/` folder inside: one `.uf2` per device and layout
+   (`NocFree_and_V<ver>_Dongle.uf2`, `..._Left_ANSI.uf2`, `..._Right_ANSI.uf2`,
+   plus ISO/JP/KR variants and the numpad on recent releases), alongside Windows
+   and macOS updater applications. No account, no special tooling — if you can
+   get the package, you have your retreat.
+
+   Verified against a real one (v2.3.21): the images are ordinary UF2s, family
+   id `0x621e937a`, loading at `0x27000`, zero bad blocks — the same shape this
+   project's own builds have, so they restore by plain drag-and-drop. Check
+   whatever you obtain before trusting it, and record its hash:
+
+   ```bash
+   python tools/uf2check.py NocFree_and_V2.3.21_Dongle.uf2
+   # expect: bad 0, family 0x621e937a, flash 0x27000 .. ...
+   ```
+
+   Note the version you get may be *newer* than what shipped on your device, so
+   "restoring" can also mean upgrading. That is usually fine, but it is not a
+   bit-for-bit return to the firmware you had.
 2. **Read the flash over SWD.** Complete and reliable, and out of scope here: it
    needs a debug probe and access to the pads, which for the dongle means
    opening the case. This project does not do that.
