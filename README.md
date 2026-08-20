@@ -261,6 +261,36 @@ written up in [`docs/DONGLE_SAFETY.md`](docs/DONGLE_SAFETY.md).
 Daily-driver stable. Reverse-engineering notes and vendor firmware used during
 development are intentionally not included in this repository.
 
+## Credits
+
+[NocFreeKB/NocFree-and-zmk](https://github.com/NocFreeKB/NocFree-and-zmk) — a
+separate, independently written community ZMK port for this keyboard (by Jarrod
+Cugley, MIT), hosted by NocFree alongside their hardware porting guide. It is
+deliberately narrower in scope than this one, and it is worth reading: it is a
+careful, well-documented piece of work.
+
+Two of its findings are merged here, with thanks:
+
+- **The split notify-drop.** ZMK's split peripheral dequeues the other half's
+  complete key-state bitmap *before* calling `bt_gatt_notify()`, and only
+  `LOG_DBG`s a failure — which is compiled out in a build with logging off. On a
+  fading link the send fails and the state is silently lost; if it carried a
+  release, that key stays held at the host. Verified independently against this
+  codebase before adopting their deeper-TX-pool mitigation, and instrumented
+  here so the remaining drops are no longer invisible.
+- **Verifying the expander polarity registers.** Their PCA9555 scan driver reads
+  those registers back after writing them, where this port only wrote. An ACKed
+  I2C write proves the byte was accepted, not that the register holds it — and
+  the failure mode is every idle key reading as pressed.
+
+Their porting notes also corrected two hardware details here: `P0.09`/`P0.17` is
+the red charge indicator rather than a general status LED (with a separate blue
+status LED on `P0.10` this port had missed entirely), and the battery divider
+scale factor is 130/100.
+
+Built on [ZMK](https://zmk.dev) and [Zephyr](https://zephyrproject.org), which
+carry their own licenses.
+
 ## License
 
 The MIT license in [`LICENSE`](LICENSE) covers the original work in this

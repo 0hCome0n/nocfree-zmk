@@ -18,6 +18,14 @@
  * before anything scans. Failure is reported but never fails the boot:
  * kscan's own error path will make a dead bus loud, and a half that boots
  * is a half that can be recovered over USB.
+ *
+ * READ-BACK: adopted from the community port at
+ * github.com/NocFreeKB/NocFree-and-zmk, whose PCA9555 scan driver verifies
+ * these registers where this only wrote them. A successful i2c_write proves
+ * the byte was ACKed, not that the register holds it -- and the failure mode
+ * is not subtle: an inversion left in place means every idle key reads
+ * PRESSED. Two extra I2C bytes per expander turn that into one loud line at
+ * boot.
  */
 
 #include <zephyr/device.h>
@@ -43,17 +51,35 @@ static int nocfree_clear_expander_polarity(void)
 	}
 
 	for (size_t i = 0; i < ARRAY_SIZE(addrs); i++) {
+		static const uint8_t reg = REG_POL_INV_PORT0;
+		uint8_t readback[2];
 		int err = i2c_write(bus, clear, sizeof(clear), addrs[i]);
 
 		if (err != 0) {
 			printk("nocfree: polarity clear failed on expander 0x%02x (%d)\n",
 			       addrs[i], err);
 			failed++;
+			continue;
+		}
+
+		/* An ACKed write is not proof the register took it. Confirm. */
+		err = i2c_write_read(bus, addrs[i], &reg, sizeof(reg), readback,
+				     sizeof(readback));
+		if (err != 0) {
+			printk("nocfree: polarity READBACK failed on 0x%02x (%d) -- "
+			       "cannot confirm; expect phantom keys if it did not take\n",
+			       addrs[i], err);
+			failed++;
+		} else if (readback[0] != 0x00 || readback[1] != 0x00) {
+			printk("nocfree: expander 0x%02x STILL INVERTING (pol=%02x%02x) -- "
+			       "every idle key will read as pressed\n",
+			       addrs[i], readback[0], readback[1]);
+			failed++;
 		}
 	}
 
 	if (failed == 0) {
-		printk("nocfree: expander polarity registers cleared\n");
+		printk("nocfree: expander polarity registers cleared and verified\n");
 	}
 
 	return 0;

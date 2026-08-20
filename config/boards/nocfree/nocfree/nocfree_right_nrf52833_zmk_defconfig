@@ -108,3 +108,12 @@ CONFIG_ZMK_KSCAN_EVENT_QUEUE_SIZE=32
 # logged "Security failed ... err 9" against the right + failed slot release,
 # right half dead until both sides were re-bonded).
 CONFIG_BT_SMP_ALLOW_UNAUTH_OVERWRITE=y
+
+# --- Split-link drop hardening -------------------------------------------------
+# THIS half is the split PERIPHERAL, so it is the one calling bt_gatt_notify()
+# with the position bitmap — see the left defconfig for the full mechanism and
+# the credit. BT_CONN_TX_MAX at the Zephyr default of 3 was the real bottleneck;
+# the central already carried a deeper pool. RAM only.
+CONFIG_BT_BUF_ACL_TX_COUNT=8
+CONFIG_BT_L2CAP_TX_BUF_COUNT=8
+CONFIG_BT_CONN_TX_MAX=8

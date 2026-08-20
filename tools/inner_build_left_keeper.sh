@@ -67,6 +67,12 @@ grep -q '^CONFIG_ZMK_KSCAN_DEDICATED_WORKQUEUE=y' "$CFG" || {
   echo "!! kscan dedicated workqueue missing (stuck-key/disconnect-cascade fix)"; exit 1; }
 grep -q '^CONFIG_NOCFREE_ACTIVITY_SYNC=y' "$CFG" || {
   echo "!! activity sync missing (right idles/deep-sleeps mid-session without it)"; exit 1; }
+# Split-link drop hardening: deeper TX pool, and a central position queue big
+# enough to absorb the release-everything burst on peripheral disconnect.
+grep -q '^CONFIG_BT_BUF_ACL_TX_COUNT=8$' "$CFG" || { echo "!! left BT_BUF_ACL_TX_COUNT not 8"; exit 1; }
+grep -q '^CONFIG_BT_L2CAP_TX_BUF_COUNT=8$' "$CFG" || { echo "!! left BT_L2CAP_TX_BUF_COUNT not 8"; exit 1; }
+grep -q '^CONFIG_ZMK_SPLIT_BLE_CENTRAL_POSITION_QUEUE_SIZE=16$' "$CFG" || {
+  echo "!! left central position queue not 16 (disconnect release burst drops)"; exit 1; }
 mkdir -p /workspace/releases /workspace/build_export/$name
 cp "$bdir/zephyr/zmk.uf2" "/workspace/${name}.uf2"
 cp "$bdir/zephyr/zmk.hex" "/workspace/${name}.hex"

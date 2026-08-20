@@ -97,9 +97,20 @@
 	};
 };
 
-/* Right's status LED is P0.17 (the dtsi default P0.09 is the LEFT's LED). */
-&status_led {
+/*
+ * Right's RED charge/low-battery indicator is P0.17 (the dtsi default P0.09 is
+ * the LEFT's). Per the vendor's pin tables this pin is the charge indicator on
+ * both halves, not a general status LED, and it is shared with charge status --
+ * the factory firmware releases it while USB-powered rather than driving it.
+ * Defined, deliberately not driven.
+ */
+&charge_led {
 	gpios = <&gpio0 17 GPIO_ACTIVE_HIGH>;
+};
+
+/* The BLUE status LED (P0.10) is on the LEFT half only. */
+&status_led {
+	status = "disabled";
 };
 
 /* The right half runs this I2C bus at 100 kHz (the dtsi's 400 kHz is a
